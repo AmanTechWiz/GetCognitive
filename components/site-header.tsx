@@ -55,6 +55,8 @@ const documentationItems = [
 export function SiteHeader() {
   const pathname = usePathname();
 
+  if (pathname.startsWith('/docs')) return null;
+
   return (
     <header id="nd-nav" className="sticky top-0 z-40 h-14">
       <div className="border-b bg-fd-background/80 backdrop-blur-lg">

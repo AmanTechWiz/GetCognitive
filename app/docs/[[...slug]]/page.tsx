@@ -26,7 +26,7 @@ export default async function DocsPage({
 
   if (!page) {
     return (
-      <main className="min-w-0 px-6 py-10 md:px-10 xl:px-14">
+      <main className="min-w-0 px-6 py-10 md:px-10 xl:px-8">
         <div className="mx-auto max-w-[760px]">
           <h1 className="text-2xl font-medium tracking-tight">Not found</h1>
           <p className="mt-2 text-sm text-fd-muted-foreground">This doc page does not exist.</p>
@@ -47,7 +47,7 @@ export default async function DocsPage({
 
   return (
     <>
-      <div className="sticky top-14 z-20 border-b bg-fd-background/80 backdrop-blur-sm xl:hidden">
+      <div className="sticky top-0 z-20 border-b bg-fd-background/80 backdrop-blur-sm xl:hidden">
         <button className="flex h-10 w-full items-center gap-2.5 px-4 py-2.5 text-start text-sm text-fd-muted-foreground md:px-6">
           <ProgressCircle className="shrink-0" />
           <span className="flex-1 truncate">{toc[0] ?? 'On this page'}</span>
@@ -109,13 +109,13 @@ export default async function DocsPage({
 
       <aside
         id="nd-toc"
-        className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-[268px] flex-col border-s pe-4 ps-6 pt-12 pb-2 xl:flex"
+        className="sticky top-0 hidden h-dvh w-[268px] flex-col border-s pe-4 ps-6 pt-12 pb-2 xl:flex"
       >
         <h3 className="inline-flex items-center gap-1.5 text-sm text-fd-muted-foreground">
           <Text className="size-4" />
           On this page
         </h3>
-        <nav className="fd-scroll-container mt-3 flex flex-col gap-1 overflow-y-auto">
+        <nav className="fd-scroll-container mt-3 ms-px flex flex-col overflow-y-auto">
           {toc.map((item, index) => (
             <a
               key={item}

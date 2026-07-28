@@ -2,24 +2,54 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Search, SidebarIcon } from 'lucide-react';
+import { Check, ChevronDown, ChevronsUpDown, Search, SidebarIcon } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { docGroups, docPages } from '@/content/docs/pages';
 import { FumadocsIcon } from '@/components/fumadocs-icon';
 import { GithubMark, ThemeToggle } from '@/components/site-header';
 
+const sections = [
+  {
+    title: 'Framework',
+    description: 'The docs framework',
+    href: '/docs',
+    color: 'var(--framework-color)',
+  },
+  {
+    title: 'UI',
+    description: 'Layouts and components',
+    href: '/docs/customize',
+    color: 'var(--ui-color)',
+  },
+  {
+    title: 'Headless',
+    description: 'Build your own docs UI',
+    href: '/docs/manual-installation',
+    color: 'var(--headless-color)',
+  },
+];
+
 export function DocsSidebar() {
   const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+  const selected = useMemo(
+    () => sections.find((section) => pathname === section.href) ?? sections[0],
+    [pathname],
+  );
 
   return (
     <aside
       id="nd-sidebar"
       className="hidden w-[268px] shrink-0 border-e bg-fd-card text-sm lg:block"
     >
-      <div className="fd-scroll-container sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto px-4 py-6">
-        <div className="flex flex-col gap-3 pb-4">
+      <div className="fd-scroll-container sticky top-0 flex h-dvh flex-col overflow-y-auto px-4 py-4">
+        <div className="flex flex-col gap-3 pb-3">
           <div className="flex items-center gap-2">
-            <Link href="/" className="inline-flex items-center gap-2.5 text-[0.9375rem] font-medium me-auto">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2.5 text-[0.9375rem] font-medium me-auto"
+            >
               <FumadocsIcon className="size-5" />
               <span>Fumadocs</span>
             </Link>
@@ -34,14 +64,61 @@ export function DocsSidebar() {
               Ctrl K
             </kbd>
           </button>
-          <div>
-            <Link href="/docs" className="block rounded-lg px-2 py-1.5 text-sm font-medium">
-              Framework
-            </Link>
-            <p className="px-2 text-xs text-fd-muted-foreground">The docs framework</p>
+          <div className="relative">
+            <button
+              onClick={() => setOpen((value) => !value)}
+              className="flex w-full items-center gap-2 rounded-lg border bg-fd-secondary/50 p-2 text-start text-fd-secondary-foreground transition-colors hover:bg-fd-accent"
+            >
+              <span
+                className="size-5 rounded-md"
+                style={{ backgroundColor: selected.color }}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium leading-none">{selected.title}</span>
+                <span className="mt-1 block truncate text-[0.8125rem] text-fd-muted-foreground">
+                  {selected.description}
+                </span>
+              </span>
+              <ChevronsUpDown className="ms-auto size-4 shrink-0 text-fd-muted-foreground" />
+            </button>
+            {open ? (
+              <div className="absolute left-0 right-0 top-[calc(100%+0.25rem)] z-40 rounded-xl border bg-fd-popover p-1 text-fd-popover-foreground shadow-lg">
+                {sections.map((section) => {
+                  const active = section.title === selected.title;
+
+                  return (
+                    <Link
+                      key={section.title}
+                      href={section.href}
+                      onClick={() => setOpen(false)}
+                      className="flex items-center gap-2 rounded-lg p-1.5 transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground"
+                    >
+                      <span
+                        className="size-5 rounded-md"
+                        style={{ backgroundColor: section.color }}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium leading-none">
+                          {section.title}
+                        </span>
+                        <span className="mt-1 block truncate text-[0.8125rem] text-fd-muted-foreground">
+                          {section.description}
+                        </span>
+                      </span>
+                      <Check
+                        className={cn(
+                          'ms-auto size-3.5 shrink-0 text-fd-primary',
+                          !active && 'invisible',
+                        )}
+                      />
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         </div>
-        <nav className="space-y-6">
+        <nav className="flex-1 space-y-6 pt-2">
           {docGroups.map((group) => {
             const pages = docPages.filter((page) => page.group === group);
             if (pages.length === 0) {
@@ -66,9 +143,9 @@ export function DocsSidebar() {
                         key={href}
                         href={href}
                         className={cn(
-                          'block rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground',
+                          'relative block rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-fd-accent/50 hover:text-fd-accent-foreground',
                           active
-                            ? 'bg-fd-accent text-fd-accent-foreground'
+                            ? 'bg-fd-primary/10 text-fd-primary before:absolute before:inset-y-2 before:left-2 before:w-px before:bg-fd-primary ps-5'
                             : 'text-fd-muted-foreground',
                         )}
                       >
@@ -81,7 +158,7 @@ export function DocsSidebar() {
             );
           })}
         </nav>
-        <div className="sticky bottom-0 mt-8 bg-fd-background pt-4">
+        <div className="sticky bottom-0 mt-8 bg-fd-card pt-4">
           <div className="flex items-center rounded-lg border bg-fd-secondary/50 p-0.5 pe-0 text-fd-muted-foreground">
             <a
               href="https://github.com/fuma-nama/fumadocs"
