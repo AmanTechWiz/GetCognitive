@@ -4,6 +4,7 @@
 @import '../styles/fd/lib/base.css';
 @import '../styles/fd/neutral.css';
 @import '../styles/site/theme.css';
+@import '../styles/site/markdown.css';
 
 html {
   scrollbar-gutter: stable;
