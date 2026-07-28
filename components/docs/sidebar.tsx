@@ -12,7 +12,10 @@ export function DocsSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside id="nd-sidebar" className="hidden w-[280px] shrink-0 border-r bg-fd-background lg:block">
+    <aside
+      id="nd-sidebar"
+      className="hidden w-[268px] shrink-0 border-e bg-fd-card text-sm lg:block"
+    >
       <div className="fd-scroll-container sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto px-4 py-6">
         <div className="flex flex-col gap-3 pb-4">
           <div className="flex items-center gap-2">

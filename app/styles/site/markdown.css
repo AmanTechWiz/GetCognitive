@@ -1,6 +1,6 @@
 @layer base {
   .md {
-    @apply text-fd-foreground/90 leading-relaxed;
+    @apply text-fd-foreground/90 leading-7;
   }
 
   .md h1,
@@ -10,11 +10,11 @@
   }
 
   .md h1 {
-    @apply text-3xl mt-2 mb-4;
+    @apply text-[1.75em] mt-2 mb-4 font-semibold;
   }
 
   .md h2 {
-    @apply text-2xl mt-10 mb-3;
+    @apply text-2xl mt-10 mb-3 scroll-m-24 border-b pb-2;
   }
 
   .md h3 {
@@ -22,7 +22,7 @@
   }
 
   .md p {
-    @apply my-4;
+    @apply my-4 text-[0.95rem];
   }
 
   .md a {
@@ -30,7 +30,7 @@
   }
 
   .md ul {
-    @apply my-4 ps-6 list-disc;
+    @apply my-4 ps-6 list-disc text-[0.95rem];
   }
 
   .md li {
@@ -38,11 +38,11 @@
   }
 
   .md code {
-    @apply font-mono text-xs px-1.5 py-0.5 rounded-md border bg-fd-secondary;
+    @apply font-mono text-xs px-1.5 py-0.5 rounded-md border bg-fd-secondary text-fd-secondary-foreground;
   }
 
   .md pre {
-    @apply my-4 p-4 rounded-xl border bg-fd-secondary overflow-auto;
+    @apply my-4 p-4 rounded-xl border bg-fd-secondary overflow-auto shadow-sm;
   }
 
   .md pre code {
@@ -50,11 +50,10 @@
   }
 
   .md blockquote {
-    @apply my-4 ps-4 border-s text-fd-muted-foreground;
+    @apply my-4 rounded-r-lg border-s-2 bg-fd-secondary/40 py-2 ps-4 text-fd-muted-foreground;
   }
 
   .md hr {
     @apply my-8 border-fd-border;
   }
 }
-
