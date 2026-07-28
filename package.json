@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/clean-dev-cache.mjs && next dev",
     "build": "next build",
     "start": "next start",
     "export": "next build",
