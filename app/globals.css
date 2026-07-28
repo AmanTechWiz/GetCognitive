@@ -1,6 +1,10 @@
 @import 'tailwindcss';
 
+@import '../styles/fd/lib/default-colors.css';
+@import '../styles/fd/lib/base.css';
+@import '../styles/fd/neutral.css';
+@import '../styles/site/theme.css';
+
 html {
   scrollbar-gutter: stable;
 }
-
