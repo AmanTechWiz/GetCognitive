@@ -2,7 +2,20 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { AlbumIcon, ChevronDown, Heart, LayoutTemplate, Search, Sun, Moon } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import {
+  AlbumIcon,
+  BookOpen,
+  Boxes,
+  ChevronDown,
+  FileCode2,
+  Heart,
+  LayoutTemplate,
+  Moon,
+  Search,
+  Sun,
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { FumadocsIcon } from '@/components/fumadocs-icon';
 
@@ -10,6 +23,33 @@ const navItems = [
   { href: '/blog', label: 'Blog', icon: AlbumIcon },
   { href: '/showcase', label: 'Showcase', icon: LayoutTemplate },
   { href: 'https://fuma-nama.dev/sponsors', label: 'Sponsors', icon: Heart, external: true },
+];
+
+const documentationItems = [
+  {
+    href: '/docs',
+    title: 'Framework',
+    description: 'The docs framework',
+    icon: BookOpen,
+  },
+  {
+    href: '/docs/customize',
+    title: 'UI',
+    description: 'Default layouts, components, and theme tokens.',
+    icon: LayoutTemplate,
+  },
+  {
+    href: '/docs/writing/markdown',
+    title: 'Markdown',
+    description: 'Author docs with Markdown and MDX.',
+    icon: FileCode2,
+  },
+  {
+    href: '/docs/manual-installation',
+    title: 'Integrations',
+    description: 'Wire content, search, and frameworks together.',
+    icon: Boxes,
+  },
 ];
 
 export function SiteHeader() {
@@ -20,10 +60,12 @@ export function SiteHeader() {
       <div className="border-b bg-fd-background/80 backdrop-blur-lg">
         <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center px-4">
           <Link href="/" className="inline-flex items-center gap-2.5 font-semibold">
-          <FumadocsIcon className="size-5" />
-          <span>Fumadocs</span>
-        </Link>
+            <FumadocsIcon className="size-5" />
+            <span>Fumadocs</span>
+          </Link>
+
           <nav className="hidden flex-row items-center gap-2 px-6 text-sm sm:flex">
+            <DocumentationMenu pathname={pathname} />
             {navItems.map((item) => (
               <Link
                 key={item.href}
@@ -31,7 +73,7 @@ export function SiteHeader() {
                 target={item.external ? '_blank' : undefined}
                 rel={item.external ? 'noreferrer noopener' : undefined}
                 className={cn(
-                  'inline-flex items-center gap-1 p-2 text-fd-muted-foreground transition-colors hover:text-fd-accent-foreground data-[active=true]:text-fd-primary',
+                  'inline-flex items-center gap-1 p-2 text-fd-muted-foreground transition-colors hover:text-fd-accent-foreground',
                   pathname.startsWith(item.href) && 'text-fd-primary',
                 )}
               >
@@ -40,6 +82,7 @@ export function SiteHeader() {
               </Link>
             ))}
           </nav>
+
           <div className="ms-auto hidden flex-row items-center justify-end gap-1.5 lg:flex">
             <button className="flex h-9 w-full max-w-[240px] items-center gap-2 rounded-full border bg-fd-secondary px-3 text-sm text-fd-muted-foreground">
               <Search className="size-4" />
@@ -59,6 +102,7 @@ export function SiteHeader() {
               <GithubMark className="size-4" />
             </a>
           </div>
+
           <div className="ms-auto flex flex-row items-center -me-1.5 lg:hidden">
             <button className="inline-flex size-10 items-center justify-center rounded-md p-2 text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground">
               <Search className="size-4" />
@@ -73,7 +117,53 @@ export function SiteHeader() {
   );
 }
 
+function DocumentationMenu({ pathname }: { pathname: string }) {
+  const active = pathname.startsWith('/docs');
+
+  return (
+    <div className="group relative">
+      <Link
+        href="/docs"
+        className={cn(
+          'inline-flex items-center gap-1 p-2 text-fd-muted-foreground transition-colors hover:text-fd-accent-foreground',
+          active && 'text-fd-primary',
+        )}
+      >
+        <BookOpen className="size-4" />
+        Documentation
+        <ChevronDown className="size-3 transition-transform group-hover:rotate-180" />
+      </Link>
+      <div className="invisible absolute left-0 top-full z-50 w-[620px] translate-y-2 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
+        <div className="rounded-xl border bg-fd-popover/90 p-3 text-fd-popover-foreground shadow-lg backdrop-blur-md">
+          <div className="grid grid-cols-2 gap-2">
+            {documentationItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="flex flex-col gap-2 rounded-lg border bg-fd-card p-3 transition-colors hover:bg-fd-accent/80 hover:text-fd-accent-foreground"
+              >
+                <div className="w-fit rounded-md border bg-fd-muted p-1">
+                  <item.icon className="size-4" />
+                </div>
+                <p className="text-base font-medium">{item.title}</p>
+                <p className="text-sm text-fd-muted-foreground">{item.description}</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ThemeToggle({ className }: { className?: string }) {
+  const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  const value = mounted ? resolvedTheme : 'light';
+
   return (
     <div
       className={cn(
@@ -82,10 +172,24 @@ export function ThemeToggle({ className }: { className?: string }) {
       )}
       data-theme-toggle=""
     >
-      <button className="grid size-7 place-items-center rounded-full bg-fd-background text-fd-foreground shadow-sm">
+      <button
+        aria-label="Light"
+        onClick={() => setTheme('light')}
+        className={cn(
+          'grid size-7 place-items-center rounded-full transition-colors',
+          value === 'light' && 'bg-fd-background text-fd-foreground shadow-sm',
+        )}
+      >
         <Sun className="size-4" />
       </button>
-      <button className="grid size-7 place-items-center rounded-full">
+      <button
+        aria-label="Dark"
+        onClick={() => setTheme('dark')}
+        className={cn(
+          'grid size-7 place-items-center rounded-full transition-colors',
+          value === 'dark' && 'bg-fd-background text-fd-foreground shadow-sm',
+        )}
+      >
         <Moon className="size-4" />
       </button>
     </div>
