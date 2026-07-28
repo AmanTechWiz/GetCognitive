@@ -3,7 +3,9 @@ const nextConfig = {
   output: 'export',
   images: { unoptimized: true },
   reactStrictMode: true,
+  turbopack: {
+    root: import.meta.dirname,
+  },
 };
 
 export default nextConfig;
-
