@@ -41,9 +41,9 @@ export default function HomePage() {
           src={HeroPreviewImage}
           alt=""
           priority
-          className="absolute inset-0 size-full object-cover -z-1 opacity-70"
+          className="absolute inset-0 size-full object-cover -z-10 opacity-70"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/0 via-black/0 to-black/30 -z-1" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/0 via-black/0 to-black/30 -z-10" />
 
         <div className="flex flex-col z-2 px-4 size-full md:p-12 max-md:items-center max-md:text-center">
           <p className="mt-12 text-xs text-brand font-medium rounded-full p-2 border border-brand/50 w-fit bg-white/40 backdrop-blur-sm">
@@ -84,7 +84,7 @@ export default function HomePage() {
           <Image
             src={Bg2Image}
             alt=""
-            className="absolute inset-0 size-full object-top object-cover -z-1 opacity-50"
+            className="absolute inset-0 size-full object-top object-cover -z-10 opacity-50"
           />
           <div className="mx-auto w-full max-w-[900px] p-4 bg-fd-card text-fd-card-foreground border rounded-2xl shadow-lg">
             <div className="flex flex-row flex-wrap gap-2 items-center">
@@ -156,4 +156,3 @@ export default function HomePage() {
     </main>
   );
 }
-
