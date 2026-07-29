@@ -9,7 +9,6 @@ import {
   Boxes,
   ChevronDown,
   FileCode2,
-  Heart,
   LayoutTemplate,
   Moon,
   Search,
@@ -17,12 +16,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
-import { FumadocsIcon } from '@/components/fumadocs-icon';
 
 const navItems = [
-  { href: '/blog', label: 'Blog', icon: AlbumIcon },
-  { href: '/showcase', label: 'Showcase', icon: LayoutTemplate },
-  { href: 'https://fuma-nama.dev/sponsors', label: 'Sponsors', icon: Heart, external: true },
+  { href: '/blog', label: 'Newsletter', icon: AlbumIcon },
 ];
 
 const documentationItems = [
@@ -62,8 +58,21 @@ export function SiteHeader() {
       <div className="border-b bg-fd-background/80 backdrop-blur-lg">
         <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center px-4">
           <Link href="/" className="inline-flex items-center gap-2.5 font-semibold">
-            <FumadocsIcon className="size-5" />
-            <span>Fumadocs</span>
+            <span
+              aria-hidden="true"
+              className="size-9 bg-[#1b1b1b] dark:bg-white"
+              style={{
+                maskImage: 'url(/no-bg-icon.svg)',
+                maskRepeat: 'no-repeat',
+                maskPosition: 'center',
+                maskSize: 'contain',
+                WebkitMaskImage: 'url(/no-bg-icon.svg)',
+                WebkitMaskRepeat: 'no-repeat',
+                WebkitMaskPosition: 'center',
+                WebkitMaskSize: 'contain',
+              }}
+            />
+            <span>Cognitive</span>
           </Link>
 
           <nav className="hidden flex-row items-center gap-2 px-6 text-sm sm:flex">
@@ -72,14 +81,11 @@ export function SiteHeader() {
               <Link
                 key={item.href}
                 href={item.href}
-                target={item.external ? '_blank' : undefined}
-                rel={item.external ? 'noreferrer noopener' : undefined}
                 className={cn(
                   'inline-flex items-center gap-1 p-2 text-fd-muted-foreground transition-colors hover:text-fd-accent-foreground',
                   pathname.startsWith(item.href) && 'text-fd-primary',
                 )}
               >
-                <item.icon className="size-4" />
                 {item.label}
               </Link>
             ))}
@@ -131,7 +137,6 @@ function DocumentationMenu({ pathname }: { pathname: string }) {
           active && 'text-fd-primary',
         )}
       >
-        <BookOpen className="size-4" />
         Documentation
         <ChevronDown className="size-3 transition-transform group-hover:rotate-180" />
       </Link>

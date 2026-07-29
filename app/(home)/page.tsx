@@ -3,14 +3,10 @@ import { cn } from '@/lib/cn';
 import Link from 'next/link';
 import { cva } from 'class-variance-authority';
 import {
-  BatteryChargingIcon,
   FileIcon,
   FileTextIcon,
-  Heart,
   SearchIcon,
-  SettingsIcon,
   TerminalIcon,
-  TimerIcon,
 } from 'lucide-react';
 import { Marquee } from '@/app/(home)/marquee';
 import { ServerCodeBlock } from '@/components/codeblock';
@@ -19,12 +15,10 @@ import {
   AgnosticBackground,
   CreateAppAnimation,
   PreviewImages,
-  Writing,
+  SecondSectionBackdrop,
 } from '@/app/(home)/page.client';
 import ShadcnImage from './shadcn.png';
-import { ContributorCounter } from '@/components/contributor-count';
 import StoryImage from './story.png';
-import CLIImage from './cli.png';
 import Bg2Image from './bg-2.png';
 import { StoryControl } from '@/components/story-control';
 
@@ -70,18 +64,21 @@ export default function Page() {
       <div className="relative flex min-h-[600px] h-[70vh] max-h-[900px] border rounded-2xl overflow-hidden mx-auto w-full max-w-[1400px] bg-origin-border">
         <Hero />
         <div className="flex flex-col z-2 px-4 size-full md:p-12 max-md:items-center max-md:text-center">
-          <p className="mt-12 text-xs text-brand font-medium rounded-full p-2 border border-brand/50 w-fit">
-            the React.js docs framework you love.
+          <p className="mt-6 text-xs text-brand font-medium rounded-full p-2 border border-brand/50 w-fit">
+            Community-maintained, open-source AI knowledge.
           </p>
-          <h1 className="text-4xl my-8 leading-tighter font-medium xl:text-5xl xl:mb-12">
-            Build excellent
-            <br className="md:hidden" /> documentation,
+          <h1 className="text-4xl mt-8 mb-4 leading-tighter font-medium xl:text-5xl xl:mb-5">
+            Every AI concept.
             <br />
-            your <span className="text-brand">style</span>.
+            Before it becomes <span className="text-brand">mainstream.</span>
           </h1>
+          <p className="mb-8 max-w-[620px] text-base leading-7 text-landing-foreground-200 max-md:mx-auto">
+            From foundational ideas to cutting-edge research, Cognitive keeps you up to date with
+            the concepts shaping the future of AI engineering.
+          </p>
           <div className="flex flex-row items-center justify-center gap-4 flex-wrap w-fit">
             <Link href="/docs" className={cn(buttonVariants(), 'max-sm:text-sm')}>
-              Getting Started
+              Start Learning
             </Link>
             <a
               href="https://stackblitz.com/github/fuma-nama/fumadocs/tree/main/examples/stackblitz"
@@ -89,25 +86,22 @@ export default function Page() {
               rel="noreferrer noopener"
               className={cn(buttonVariants({ variant: 'secondary' }), 'max-sm:text-sm')}
             >
-              Open StackBlitz
+              Browse Library
             </a>
           </div>
         </div>
       </div>
       <div className="grid grid-cols-1 gap-10 mt-12 px-6 mx-auto w-full max-w-[1400px] md:px-12 lg:grid-cols-2 lg:mt-20">
-        <p className="text-2xl tracking-tight leading-snug font-light col-span-full md:text-3xl xl:text-4xl">
-          Fumadocs is a <span className="text-brand font-medium">React.js</span> documentation
-          framework for <span className="text-brand font-medium">Developers</span>, beautifully
-          designed by <span className="text-brand font-medium">Fuma Nama</span>. Bringing powerful
-          features for your docs workflows, with high customizability to fit your preferences, works
-          seamlessly with any React.js framework, CMS — anything.
+        <p className="col-span-full w-full text-2xl tracking-tight leading-snug font-light md:text-3xl xl:text-4xl">
+          <span className="text-brand font-medium">Every new AI concept, explained.</span> The AI
+          landscape evolves every week, and Cognitive documents the newest ideas as they emerge.
+          Each topic includes <span className="text-brand font-medium">visual explainers</span>,
+          architecture diagrams, curated resources, and community-written handbooks so you can
+          understand ideas <span className="text-brand font-medium">deeply</span>, not just memorize
+          buzzwords.
         </p>
-        <div className="relative p-4 rounded-2xl col-span-full z-2 overflow-hidden md:p-8">
-          <Image
-            src={CLIImage}
-            alt=""
-            className="absolute inset-0 size-full object-top object-cover -z-1"
-          />
+        <div className="relative p-4 rounded-2xl col-span-full z-2 overflow-hidden border bg-black md:p-8">
+          <SecondSectionBackdrop />
           <div className="mx-auto w-full max-w-[800px] p-2 bg-fd-card text-fd-card-foreground border rounded-2xl shadow-lg">
             <div className="flex flex-row gap-2">
               <h2 className="text-brand content-center font-mono font-bold uppercase border-2 border-brand/50 px-2 rounded-xl">
@@ -136,86 +130,9 @@ export default function Page() {
         <Feedback />
         <Aesthetics />
 
-        <AnybodyCanWrite />
-
         <ForEngineers />
-        <ForNonEnginners />
-        <OpenSource />
       </div>
     </main>
-  );
-}
-
-function ForNonEnginners() {
-  return (
-    <>
-      <h2
-        className={cn(
-          headingVariants({
-            variant: 'h2',
-            className: 'mt-8 text-brand text-center mb-4 col-span-full',
-          }),
-        )}
-      >
-        Not Just Engineers.
-      </h2>
-
-      <div className={cn(cardVariants({ className: 'flex flex-col' }))}>
-        <SettingsIcon className="text-brand mb-4" />
-        <h3
-          className={cn(
-            headingVariants({
-              variant: 'h3',
-              className: 'mb-6',
-            }),
-          )}
-        >
-          Meet Fumapress.
-        </h3>
-        <p className="mb-8">
-          Want to use Fumadocs without the complexity of configurations & prior knowledge?
-          <br />
-          <br />
-          Fumapress is a React.js framework for Fumadocs, every feature needs only a plugin –
-          embracing simplicity fully for those who just want a working docs.
-        </p>
-        <div className="flex flex-row items-center gap-2">
-          <a
-            href="https://press.fumadocs.dev"
-            rel="noreferrer noopener"
-            target="_blank"
-            className={cn(buttonVariants({ variant: 'primary' }))}
-          >
-            Learn More
-          </a>
-          <a
-            href="https://press.fumadocs.dev/blog/introducing-fumapress"
-            rel="noreferrer noopener"
-            target="_blank"
-            className={cn(buttonVariants({ variant: 'secondary' }))}
-          >
-            Why?
-          </a>
-        </div>
-      </div>
-      <ServerCodeBlock
-        lang="ts"
-        codeblock={{ title: 'press.config.tsx' }}
-        code={`import { defineConfig } from "fumapress";
-import { fumadocsMdx } from "fumapress/adapters/mdx";
-import { flexsearchPlugin } from "fumapress/plugins/flexsearch";
-import { llmsPlugin } from "fumapress/plugins/llms.txt";
-import { docs } from "./.source/server";
-
-export default defineConfig({
-  content: {
-    docs: docs.toFumadocsSource(),
-  },
-})
-  .plugins(flexsearchPlugin(), llmsPlugin())
-  .adapters(fumadocsMdx());`}
-      />
-    </>
   );
 }
 
@@ -284,135 +201,6 @@ function Aesthetics() {
         />
       </div>
     </>
-  );
-}
-
-function AnybodyCanWrite() {
-  return (
-    <Writing
-      tabs={{
-        writer: (
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-            <ServerCodeBlock
-              code={`---
-title: Hello World
----
-
-## Overview
-
-I love **Fumadocs**!
-
-\`\`\`ts tab="Tab 1"
-console.log("Hello World")
-\`\`\`
-
-\`\`\`ts tab="Tab 2"
-return 0;
-\`\`\``}
-              lang="mdx"
-            />
-            <div className="max-lg:row-start-1">
-              <h3 className={cn(headingVariants({ variant: 'h3', className: 'my-4' }))}>
-                The familiar syntax.
-              </h3>
-              <p>
-                It is just Markdown, with additional features seamlessly composing into the syntax.
-              </p>
-              <ul className="text-xs list-disc list-inside mt-8">
-                <li>Markdown features, including images</li>
-                <li>Syntax highlighting (Powered by Shiki)</li>
-                <li>Codeblock Groups</li>
-                <li>Callouts</li>
-                <li>Cards</li>
-                <li>Custom Heading Anchors</li>
-                <li>Auto Table of Contents</li>
-              </ul>
-            </div>
-          </div>
-        ),
-        developer: (
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-            <ServerCodeBlock
-              code={`---
-title: Hello World
----
-
-import { Playground } from "@/components/playground";
-
-## Overview
-
-<Playground title="Test" />
-
-This codeblock shows TypeScript information!
-
-\`\`\`ts twoslash
-console.log("Hello World");
-
-// give your code decorations [!code ++]
-const name = "fumadocs";
-\`\`\`
-
-And re-use content:
-
-<include>./another-page.mdx</include>`}
-              lang="mdx"
-            />
-            <div className="max-lg:row-start-1">
-              <h3 className={cn(headingVariants({ variant: 'h3', className: 'my-4' }))}>
-                Extensive but simple.
-              </h3>
-              <p>MDX for developers authoring content, use JavaScript in content.</p>
-              <ul className="text-xs list-disc list-inside mt-8">
-                <li>JavaScript + JSX syntax</li>
-                <li>Custom Components</li>
-                <li>Include/Embed Content</li>
-                <li>TypeScript Twoslash: show type information in codeblocks.</li>
-                <li>Shiki Notations</li>
-                <li>Storybook integration to showcase components.</li>
-                <li>Extend via remark, rehype plugins</li>
-              </ul>
-            </div>
-          </div>
-        ),
-        automation: (
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-            <ServerCodeBlock
-              code={`---
-title: Hello World
----
-
-import { db } from "@/lib/db";
-
-export async function DataView() {
-  const products = await db.select().from("products");
-  return products.map(product => <div key={product.id}>{product.name}</div>)
-}
-
-<DataView />
-
-<auto-type-table path='./my-file.ts' name='CardProps' />`}
-              lang="tsx"
-            />
-
-            <div className="max-lg:row-start-1">
-              <h3 className={cn(headingVariants({ variant: 'h3', className: 'my-4' }))}>
-                Content, always up-to-date.
-              </h3>
-              <p>
-                Combining the power of MDX and React Server Components, use the latest data from
-                database, server — anywhere, to be part of your content.
-              </p>
-              <ul className="text-xs list-disc list-inside mt-8">
-                <li>Works on React Server Components</li>
-                <li>Display data from database, CMS, anything</li>
-                <li>auto-type-table for documenting types based on TypeScript Compiler</li>
-                <li>OpenAPI playground for documenting your APIs</li>
-              </ul>
-            </div>
-          </div>
-        ),
-      }}
-    />
   );
 }
 
@@ -774,125 +562,5 @@ function Search() {
         ))}
       </div>
     </div>
-  );
-}
-
-function OpenSource() {
-  return (
-    <>
-      <h2
-        className={cn(
-          headingVariants({
-            variant: 'h2',
-            className: 'mt-8 text-brand text-center mb-4 col-span-full',
-          }),
-        )}
-      >
-        Open Source Forever.
-      </h2>
-
-      <div className={cn(cardVariants({ className: 'flex flex-col' }))}>
-        <Heart fill="currentColor" className="text-pink-500 mb-4" />
-        <h3
-          className={cn(
-            headingVariants({
-              variant: 'h3',
-              className: 'mb-6',
-            }),
-          )}
-        >
-          Made Possible by You.
-        </h3>
-        <p className="mb-8">Fumadocs is 100% powered by passion and open source community.</p>
-        <div className="mb-8 flex flex-row items-center gap-2">
-          <a
-            href="https://fuma-nama.dev/sponsors"
-            rel="noreferrer noopener"
-            className={cn(buttonVariants({ variant: 'primary' }))}
-          >
-            Sponsors
-          </a>
-          <a
-            href="https://github.com/fuma-nama/fumadocs/graphs/contributors"
-            rel="noreferrer noopener"
-            className={cn(buttonVariants({ variant: 'secondary' }))}
-          >
-            Contributors
-          </a>
-        </div>
-        <ContributorCounter repoOwner="fuma-nama" repoName="fumadocs" />
-      </div>
-      <div
-        className={cn(
-          cardVariants({
-            className: 'flex flex-col p-0 pt-8',
-          }),
-        )}
-      >
-        <h2 className="text-3xl text-center font-extrabold font-mono uppercase mb-4 lg:text-4xl">
-          Build Your Docs
-        </h2>
-        <p className="text-center font-mono text-xs opacity-50 mb-8">
-          light and gorgeous, just like the moon.
-        </p>
-        <div className="h-[200px] mt-auto overflow-hidden p-8 bg-gradient-to-b from-brand-secondary/10">
-          <div className="mx-auto bg-radial-[circle_at_0%_100%] from-60% from-transparent to-brand-secondary size-[500px] rounded-full" />
-        </div>
-      </div>
-
-      <ul
-        className={cn(
-          cardVariants({
-            className: 'flex flex-col gap-6 col-span-full',
-          }),
-        )}
-      >
-        <li>
-          <span className="flex flex-row items-center gap-2 font-medium">
-            <BatteryChargingIcon className="size-5" />
-            Battery guaranteed.
-          </span>
-          <span className="mt-2 text-sm text-fd-muted-foreground">
-            Actively maintained, open for contributions.
-          </span>
-        </li>
-        <li>
-          <span className="flex flex-row items-center gap-2 font-medium">
-            <svg viewBox="0 0 24 24" className="size-5" fill="currentColor">
-              <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
-            </svg>
-            Fully open-source.
-          </span>
-          <span className="mt-2 text-sm text-fd-muted-foreground">
-            Open source, available on Github.
-          </span>
-        </li>
-        <li>
-          <span className="flex flex-row items-center gap-2 font-medium">
-            <TimerIcon className="size-5" />
-            Within seconds.
-          </span>
-          <span className="mt-2 text-sm text-fd-muted-foreground">
-            Initialize a new project instantly with CLI.
-          </span>
-        </li>
-        <li className="flex flex-row flex-wrap gap-2 mt-auto">
-          <Link href="/docs" className={cn(buttonVariants())}>
-            Read docs
-          </Link>
-          <a
-            href="https://github.com/fuma-nama/fumadocs"
-            rel="noreferrer noopener"
-            className={cn(
-              buttonVariants({
-                variant: 'secondary',
-              }),
-            )}
-          >
-            Open GitHub
-          </a>
-        </li>
-      </ul>
-    </>
   );
 }

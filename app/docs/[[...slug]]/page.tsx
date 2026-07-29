@@ -2,18 +2,17 @@ import Link from 'next/link';
 import { marked } from 'marked';
 import {
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
   ExternalLink,
   MessageCircle,
   MoreHorizontal,
-  Text,
   ThumbsDown,
   ThumbsUp,
 } from 'lucide-react';
 import { docPages, getDocBySlug, type DocPage } from '@/content/docs/pages';
+import { DocsDesktopToc, DocsMobileToc } from '@/components/docs/toc';
 import { cn } from '@/lib/cn';
 
 export default async function DocsPage({
@@ -47,13 +46,7 @@ export default async function DocsPage({
 
   return (
     <>
-      <div className="sticky top-0 z-20 border-b bg-fd-background/80 backdrop-blur-sm xl:hidden">
-        <button className="flex h-10 w-full items-center gap-2.5 px-4 py-2.5 text-start text-sm text-fd-muted-foreground md:px-6">
-          <ProgressCircle className="shrink-0" />
-          <span className="flex-1 truncate">{toc[0] ?? 'On this page'}</span>
-          <ChevronDown className="size-4 shrink-0" />
-        </button>
-      </div>
+      <DocsMobileToc items={toc} />
 
       <main className="min-w-0 px-6 py-10 md:px-10 xl:px-14">
         <article className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-[760px] flex-col">
@@ -107,31 +100,7 @@ export default async function DocsPage({
         </article>
       </main>
 
-      <aside
-        id="nd-toc"
-        className="sticky top-0 hidden h-dvh w-[268px] flex-col border-s pe-4 ps-6 pt-12 pb-2 xl:flex"
-      >
-        <h3 className="inline-flex items-center gap-1.5 text-sm text-fd-muted-foreground">
-          <Text className="size-4" />
-          On this page
-        </h3>
-        <nav className="fd-scroll-container mt-3 ms-px flex flex-col overflow-y-auto">
-          {toc.map((item, index) => (
-            <a
-              key={item}
-              href={`#${slugify(item)}`}
-              className={cn(
-                'border-s py-1 ps-3 text-sm transition-colors hover:text-fd-foreground',
-                index === 0
-                  ? 'border-fd-primary text-fd-primary'
-                  : 'border-fd-border text-fd-muted-foreground',
-              )}
-            >
-              {item}
-            </a>
-          ))}
-        </nav>
-      </aside>
+      <DocsDesktopToc items={toc} />
 
       <button className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-2xl border bg-fd-card px-4 py-3 text-sm font-medium shadow-xl transition-colors hover:bg-fd-accent">
         <MessageCircle className="size-4" />
@@ -195,26 +164,6 @@ function FooterItem({ item, direction }: { item: DocPage; direction: 'previous' 
         {item.description ?? (direction === 'previous' ? 'Previous Page' : 'Next Page')}
       </p>
     </Link>
-  );
-}
-
-function ProgressCircle({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 18 18" className={cn('size-[18px] text-fd-primary', className)}>
-      <circle cx="9" cy="9" r="7.25" fill="none" strokeWidth="1.5" className="stroke-current/25" />
-      <circle
-        cx="9"
-        cy="9"
-        r="7.25"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeDasharray="45.55"
-        strokeDashoffset="28"
-        strokeLinecap="round"
-        transform="rotate(-90 9 9)"
-      />
-    </svg>
   );
 }
 

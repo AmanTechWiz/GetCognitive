@@ -10,3 +10,6 @@ yarn-error.log*
 .npm-cache
 dev.err.log
 dev.out.log
+dev-server.log
+dev-server.err.log
+*.log

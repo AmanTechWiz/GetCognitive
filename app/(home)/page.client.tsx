@@ -5,12 +5,11 @@ import {
   Fragment,
   type HTMLAttributes,
   type ReactElement,
-  type ReactNode,
+  type RefObject,
   useEffect,
   useRef,
   useState,
 } from 'react';
-import { ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import Image from 'next/image';
 import MainImg from './main.png';
@@ -18,32 +17,72 @@ import OpenAPIImg from './openapi.png';
 import NotebookImg from './notebook.png';
 import { cva } from 'class-variance-authority';
 import HeroImage from './hero-preview.jpeg';
+import AgentHeroImage from './agent-hero.png';
+import SecondSectionBg from './2nd-section-bg.png';
 import { useTheme } from 'next-themes';
+import dynamic from 'next/dynamic';
+
+const GrainGradient = dynamic(
+  () => import('@paper-design/shaders-react').then((mod) => mod.GrainGradient),
+  {
+    ssr: false,
+  },
+);
+const ImageDithering = dynamic(
+  () => import('@paper-design/shaders-react').then((mod) => mod.ImageDithering),
+  {
+    ssr: false,
+  },
+);
 
 export function Hero() {
   const { resolvedTheme } = useTheme();
   const ref = useRef<HTMLImageElement | null>(null);
+  const visible = useIsVisible(ref);
+  const [showShaders, setShowShaders] = useState(false);
   const [imageReady, setImageReady] = useState(false);
-  const dark = resolvedTheme === 'dark';
+
+  useEffect(() => {
+    setTimeout(() => {
+      setShowShaders(true);
+    }, 400);
+  }, []);
 
   return (
     <>
-      <div
-        className="absolute inset-0 animate-fd-fade-in duration-800"
-        style={{
-          background: dark
-            ? 'radial-gradient(circle at 15% 20%, #39be1c70, transparent 34%), radial-gradient(circle at 80% 5%, #df3f0045, transparent 42%)'
-            : 'radial-gradient(circle at 15% 20%, #fcfc5170, transparent 34%), radial-gradient(circle at 80% 5%, #fa802345, transparent 42%)',
-        }}
-      />
-      <div
-        className="absolute size-[720px] animate-fd-fade-in duration-400 max-lg:bottom-[-50%] max-lg:left-[-200px] lg:top-[-5%] lg:right-0"
-        style={{
-          backgroundImage: `radial-gradient(circle, ${dark ? '#df3f00' : '#fa8023'} 1px, transparent 1px)`,
-          backgroundSize: '8px 8px',
-          maskImage: 'radial-gradient(circle, white 0%, transparent 65%)',
-        }}
-      />
+      {showShaders && (
+        <GrainGradient
+          className="absolute inset-0 animate-fd-fade-in duration-800"
+          colors={
+            resolvedTheme === 'dark'
+              ? ['#173b12', '#3f6f2d', '#00000000']
+              : ['#2d5724', '#77975b', '#00000000']
+          }
+          colorBack="#00000000"
+          softness={1}
+          intensity={0.38}
+          noise={0.42}
+          speed={visible ? 1 : 0}
+          shape="corners"
+          minPixelRatio={1}
+          maxPixelCount={1920 * 1080}
+        />
+      )}
+      {showShaders && (
+        <ImageDithering
+          image={AgentHeroImage.src}
+          width={760}
+          height={510}
+          colorBack="#00000000"
+          type="4x4"
+          size={3}
+          colorSteps={4}
+          originalColors
+          className="absolute right-[-40px] top-[-10px] animate-fd-fade-in duration-400 max-lg:right-[-180px] max-lg:opacity-45 max-md:hidden"
+          minPixelRatio={1}
+          maxPixelCount={960 * 640}
+        />
+      )}
       <Image
         ref={ref}
         src={HeroImage}
@@ -55,6 +94,51 @@ export function Hero() {
         onLoad={() => setImageReady(true)}
         priority
       />
+    </>
+  );
+}
+
+export function SecondSectionBackdrop() {
+  const { resolvedTheme } = useTheme();
+  const [showShader, setShowShader] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowShader(true), 250);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <>
+      <div className="absolute inset-x-0 top-1/2 -z-3 aspect-[1782/1024] w-full -translate-y-1/2 overflow-hidden">
+        <Image
+          src={SecondSectionBg}
+          alt=""
+          fill
+          className="object-contain opacity-70 saturate-60 dark:opacity-65"
+        />
+        {showShader && (
+          <ImageDithering
+            image={SecondSectionBg.src}
+            width="100%"
+            height="100%"
+            fit="contain"
+            scale={1}
+            colorBack="#00000000"
+            colorFront={resolvedTheme === 'dark' ? '#123b12' : '#173f13'}
+            colorHighlight={resolvedTheme === 'dark' ? '#8fd56f' : '#7fcf58'}
+            type="4x4"
+            size={6}
+            colorSteps={2}
+            originalColors={false}
+            className="absolute inset-0 opacity-95 mix-blend-screen dark:opacity-90"
+            minPixelRatio={1}
+            maxPixelCount={1280 * 720}
+          />
+        )}
+      </div>
+      <div className="absolute inset-0 -z-2 bg-[#020702]/55 mix-blend-multiply dark:bg-[#020502]/60" />
+      <div className="absolute inset-0 -z-1 bg-radial-[circle_at_50%_0%] from-brand/24 via-transparent to-black/35" />
     </>
   );
 }
@@ -214,74 +298,46 @@ export function PreviewImages(props: ComponentProps<'div'>) {
   );
 }
 
-const WritingTabs = [
-  {
-    name: 'Writer',
-    value: 'writer',
-  },
-  {
-    name: 'Developer',
-    value: 'developer',
-  },
-  {
-    name: 'Automation',
-    value: 'automation',
-  },
-] as const;
-
-export function Writing({
-  tabs: tabContents,
-}: {
-  tabs: Record<(typeof WritingTabs)[number]['value'], ReactNode>;
-}) {
-  const [tab, setTab] = useState<(typeof WritingTabs)[number]['value']>('writer');
-
-  return (
-    <div className="col-span-full my-20">
-      <h2 className="text-4xl text-brand mb-8 text-center font-medium tracking-tight">
-        Anybody can write.
-      </h2>
-      <p className="text-center mb-8 mx-auto w-full max-w-[800px]">
-        Native support for Markdown & MDX, offering intuitive, convenient and extensive syntax for
-        non-dev writers, developers, and AI agents.
-      </p>
-      <div className="flex justify-center items-center gap-4 text-fd-muted-foreground mb-6">
-        {WritingTabs.map((item) => (
-          <Fragment key={item.value}>
-            <ArrowRight className="size-4 first:hidden" />
-            <button
-              className={cn(
-                'text-lg font-medium transition-colors',
-                item.value === tab && 'text-brand',
-              )}
-              onClick={() => setTab(item.value)}
-            >
-              {item.name}
-            </button>
-          </Fragment>
-        ))}
-      </div>
-      {Object.entries(tabContents).map(([key, value]) => (
-        <div
-          key={key}
-          aria-hidden={key !== tab}
-          className={cn('animate-fd-fade-in', key !== tab && 'hidden')}
-        >
-          {value}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function AgnosticBackground() {
   return (
     <div
       className="absolute inset-0 -z-1 mask-[linear-gradient(to_top,white_30%,transparent_calc(100%-120px))]"
       style={{
         backgroundImage:
-          'radial-gradient(circle at 20% 70%, #c6bb5866, transparent 28%), radial-gradient(circle at 80% 30%, #c6bb5833, transparent 34%), linear-gradient(135deg, transparent 0 45%, #c6bb5822 45% 55%, transparent 55% 100%)',
+          'radial-gradient(circle at 20% 70%, #39be1c66, transparent 28%), radial-gradient(circle at 80% 30%, #91ff3d33, transparent 34%), linear-gradient(135deg, transparent 0 45%, #39be1c22 45% 55%, transparent 55% 100%)',
       }}
     />
   );
+}
+
+let observer: IntersectionObserver;
+
+const observerTargets = new WeakMap<Element, (entry: IntersectionObserverEntry) => void>();
+
+function useIsVisible(ref: RefObject<HTMLElement | null>) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    observer ??= new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        observerTargets.get(entry.target)?.(entry);
+      }
+    });
+
+    const element = ref.current;
+    if (!element) return;
+
+    observerTargets.set(element, (entry) => {
+      setVisible(entry.isIntersecting);
+    });
+
+    observer.observe(element);
+
+    return () => {
+      observer.unobserve(element);
+      observerTargets.delete(element);
+    };
+  }, [ref]);
+
+  return visible;
 }

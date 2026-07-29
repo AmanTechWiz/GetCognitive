@@ -1,27 +1,22 @@
 'use client';
 
-import { useId } from 'react';
+import Image from 'next/image';
+import { useTheme } from 'next-themes';
+import { useEffect, useState } from 'react';
 
-export function FumadocsIcon(props: React.SVGProps<SVGSVGElement>) {
-  const id = useId();
+type FumadocsIconProps = {
+  className?: string;
+  alt?: string;
+};
 
-  return (
-    <svg width="80" height="80" viewBox="0 0 180 180" {...props}>
-      <circle
-        cx="90"
-        cy="90"
-        r="89"
-        fill={`url(#${id}-iconGradient)`}
-        stroke="var(--color-fd-primary)"
-        strokeWidth="1"
-      />
-      <defs>
-        <linearGradient id={`${id}-iconGradient`} gradientTransform="rotate(45)">
-          <stop offset="45%" stopColor="var(--color-fd-background)" />
-          <stop offset="100%" stopColor="var(--color-fd-primary)" />
-        </linearGradient>
-      </defs>
-    </svg>
-  );
+export function FumadocsIcon({ className, alt = 'Cognitive' }: FumadocsIconProps) {
+  const { resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  const theme = mounted ? resolvedTheme : 'light';
+  const src = theme === 'dark' ? '/cognitive-icon-dark.png' : '/cognitive-icon-light.png';
+
+  return <Image src={src} alt={alt} width={80} height={80} className={className} priority />;
 }
-

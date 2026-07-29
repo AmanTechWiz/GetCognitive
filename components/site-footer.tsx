@@ -1,0 +1,106 @@
+import Image from 'next/image';
+import Link from 'next/link';
+import { GithubMark } from '@/components/site-header';
+
+const footerGroups = [
+  {
+    title: 'Explore',
+    links: [
+      { href: '/docs', label: 'Library' },
+      { href: '/docs/overview', label: 'Overview' },
+      { href: '/blog', label: 'Newsletter' },
+    ],
+  },
+  {
+    title: 'Topics',
+    links: [
+      { href: '/docs/foundations/from-prompt-to-production', label: 'Foundations' },
+      { href: '/docs/retrieval-systems', label: 'Retrieval' },
+      { href: '/docs/ai-security', label: 'Security' },
+    ],
+  },
+  {
+    title: 'Community',
+    links: [
+      { href: 'https://github.com/fuma-nama/fumadocs', label: 'GitHub' },
+      { href: 'https://www.linkedin.com', label: 'LinkedIn' },
+    ],
+  },
+];
+
+export function SiteFooter() {
+  return (
+    <footer className="mx-auto mt-20 w-full max-w-[1400px] px-4 pb-8 md:px-6">
+      <div className="overflow-hidden rounded-2xl border bg-fd-card text-fd-card-foreground shadow-sm">
+        <div className="grid gap-10 px-6 py-8 md:grid-cols-[1.15fr_1.85fr] md:px-10 md:py-10">
+          <div className="flex flex-col gap-5">
+            <div className="flex items-center gap-4">
+              <Image
+                src="/cognitive-icon-light.png"
+                alt="Cognitive"
+                width={96}
+                height={96}
+                className="size-16 rounded-xl object-cover dark:hidden"
+              />
+              <Image
+                src="/cognitive-icon-dark.png"
+                alt="Cognitive"
+                width={96}
+                height={96}
+                className="hidden size-16 rounded-xl object-cover dark:block"
+              />
+              <div>
+                <p className="text-3xl font-light leading-none tracking-tight">Cognitive</p>
+                <p className="mt-1 text-sm text-fd-muted-foreground">
+                  Open AI knowledge for engineers.
+                </p>
+              </div>
+            </div>
+            <p className="max-w-md text-sm leading-6 text-fd-muted-foreground">
+              Community-maintained explainers, diagrams, and handbooks for understanding the AI
+              systems that are becoming production infrastructure.
+            </p>
+            <div className="flex gap-2">
+              <a
+                href="https://github.com/fuma-nama/fumadocs"
+                aria-label="GitHub"
+                className="inline-flex size-9 items-center justify-center rounded-lg border bg-fd-background text-fd-muted-foreground transition-colors hover:text-fd-foreground"
+              >
+                <GithubMark className="size-4" />
+              </a>
+              <a
+                href="https://www.linkedin.com"
+                aria-label="LinkedIn"
+                className="inline-flex size-9 items-center justify-center rounded-lg border bg-fd-background text-fd-muted-foreground transition-colors hover:text-fd-foreground"
+              >
+                <span className="text-xs font-semibold">in</span>
+              </a>
+            </div>
+          </div>
+
+          <nav className="grid gap-8 sm:grid-cols-3">
+            {footerGroups.map((group) => (
+              <div key={group.title}>
+                <p className="mb-3 text-sm font-medium text-fd-foreground">{group.title}</p>
+                <ul className="space-y-2 text-sm text-fd-muted-foreground">
+                  {group.links.map((link) => (
+                    <li key={link.label}>
+                      <Link href={link.href} className="transition-colors hover:text-fd-foreground">
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </nav>
+        </div>
+
+        <div className="flex flex-col gap-2 border-t px-6 py-4 text-xs text-fd-muted-foreground md:flex-row md:items-center md:justify-between md:px-10">
+          <p>2026 Cognitive. Community-maintained AI knowledge.</p>
+          <p>Built for engineers tracking what comes next.</p>
+        </div>
+      </div>
+    </footer>
+  );
+}

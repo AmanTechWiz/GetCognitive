@@ -1,0 +1,179 @@
+'use client';
+
+import { ChevronDown, Text } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { cn } from '@/lib/cn';
+
+export function DocsMobileToc({ items }: { items: string[] }) {
+  const links = useMemo(
+    () => items.map((item) => ({ title: item, id: slugify(item) })),
+    [items],
+  );
+  const [activeId, setActiveId] = useState(links[0]?.id ?? '');
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (links.length === 0) return;
+
+    const visible = new Map<string, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) visible.set(entry.target.id, entry.boundingClientRect.top);
+          else visible.delete(entry.target.id);
+        }
+
+        const next = [...visible.entries()].sort((a, b) => a[1] - b[1])[0]?.[0];
+        if (next) setActiveId(next);
+      },
+      {
+        rootMargin: '-88px 0px -70% 0px',
+        threshold: [0, 1],
+      },
+    );
+
+    for (const link of links) {
+      const element = document.getElementById(link.id);
+      if (element) observer.observe(element);
+    }
+
+    return () => observer.disconnect();
+  }, [links]);
+
+  const activeTitle = links.find((link) => link.id === activeId)?.title ?? links[0]?.title;
+
+  return (
+    <div className="sticky top-0 z-20 border-b bg-fd-background/80 backdrop-blur-sm xl:hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex h-10 w-full items-center gap-2.5 px-4 py-2.5 text-start text-sm text-fd-muted-foreground md:px-6"
+      >
+        <ProgressCircle className="shrink-0" value={getProgress(links, activeId)} />
+        <span className="flex-1 truncate">{activeTitle ?? 'On this page'}</span>
+        <ChevronDown className={cn('size-4 shrink-0 transition-transform', open && 'rotate-180')} />
+      </button>
+      {open ? (
+        <nav className="fd-scroll-container max-h-[55vh] overflow-y-auto border-t px-4 py-3 md:px-6">
+          <TocLinks links={links} activeId={activeId} onClick={() => setOpen(false)} />
+        </nav>
+      ) : null}
+    </div>
+  );
+}
+
+export function DocsDesktopToc({ items }: { items: string[] }) {
+  const links = useMemo(
+    () => items.map((item) => ({ title: item, id: slugify(item) })),
+    [items],
+  );
+  const [activeId, setActiveId] = useState(links[0]?.id ?? '');
+
+  useEffect(() => {
+    if (links.length === 0) return;
+
+    const visible = new Map<string, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) visible.set(entry.target.id, entry.boundingClientRect.top);
+          else visible.delete(entry.target.id);
+        }
+
+        const next = [...visible.entries()].sort((a, b) => a[1] - b[1])[0]?.[0];
+        if (next) setActiveId(next);
+      },
+      {
+        rootMargin: '-88px 0px -70% 0px',
+        threshold: [0, 1],
+      },
+    );
+
+    for (const link of links) {
+      const element = document.getElementById(link.id);
+      if (element) observer.observe(element);
+    }
+
+    return () => observer.disconnect();
+  }, [links]);
+
+  return (
+    <aside
+      id="nd-toc"
+      className="sticky top-0 hidden h-dvh w-[268px] flex-col border-s pe-4 ps-6 pt-12 pb-2 xl:flex"
+    >
+      <h3 className="inline-flex items-center gap-1.5 text-sm text-fd-muted-foreground">
+        <Text className="size-4" />
+        On this page
+      </h3>
+      <nav className="fd-scroll-container mt-3 ms-px flex flex-col overflow-y-auto">
+        <TocLinks links={links} activeId={activeId} />
+      </nav>
+    </aside>
+  );
+}
+
+function TocLinks({
+  links,
+  activeId,
+  onClick,
+}: {
+  links: { title: string; id: string }[];
+  activeId: string;
+  onClick?: () => void;
+}) {
+  if (links.length === 0) {
+    return <p className="py-1 ps-3 text-sm text-fd-muted-foreground">No headings</p>;
+  }
+
+  return links.map((link) => (
+    <a
+      key={link.id}
+      href={`#${link.id}`}
+      onClick={onClick}
+      className={cn(
+        'border-s py-1 ps-3 text-sm transition-colors hover:text-fd-foreground',
+        activeId === link.id
+          ? 'border-fd-primary text-fd-primary'
+          : 'border-fd-border text-fd-muted-foreground',
+      )}
+    >
+      {link.title}
+    </a>
+  ));
+}
+
+function ProgressCircle({ className, value }: { className?: string; value: number }) {
+  const offset = 45.55 - 45.55 * value;
+
+  return (
+    <svg viewBox="0 0 18 18" className={cn('size-[18px] text-fd-primary', className)}>
+      <circle cx="9" cy="9" r="7.25" fill="none" strokeWidth="1.5" className="stroke-current/25" />
+      <circle
+        cx="9"
+        cy="9"
+        r="7.25"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeDasharray="45.55"
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        transform="rotate(-90 9 9)"
+      />
+    </svg>
+  );
+}
+
+function getProgress(links: { id: string }[], activeId: string) {
+  const index = links.findIndex((link) => link.id === activeId);
+  return (index + 1) / Math.max(1, links.length);
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+}

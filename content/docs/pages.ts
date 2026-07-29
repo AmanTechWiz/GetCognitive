@@ -1,163 +1,141 @@
-export type DocPage = {
-  slug: string[]; // e.g. ["getting-started"]
-  title: string;
-  description?: string;
-  group: string;
-  toc?: string[];
-  body: string; // markdown
+import { appendixPages } from './appendices/appendices';
+import { part01FoundationsPages } from './chapters/part-01-foundations';
+import { part02HighPerformanceInferencePages } from './chapters/part-02-high-performance-inference';
+import { part03BuildingAiApplicationsPages } from './chapters/part-03-building-ai-applications';
+import { part04RetrievalSystemsPages } from './chapters/part-04-retrieval-systems';
+import { part05EvaluationProductionEngineeringPages } from './chapters/part-05-evaluation-production-engineering';
+import { part06AiSecurityPages } from './chapters/part-06-ai-security';
+import { part07StrategyFailureCaseStudiesPages } from './chapters/part-07-strategy-failure-case-studies';
+import type { DocPage } from './types';
+
+export type { DocPage } from './types';
+
+const overviewPage: DocPage = {
+  slug: ['overview'],
+  title: 'The AI Systems Handbook',
+  description: 'From prompt to production: engineering reliable, scalable, and efficient AI systems.',
+  group: 'Start Here',
+  toc: ['What This Handbook Teaches', 'How To Read It', 'How The Handbook Is Organized'],
+  body: `# The AI Systems Handbook
+
+This handbook teaches how modern AI systems work from the first user request to production operations.
+
+It is organized as a practical course for students and engineers. The goal is not to memorize isolated terms. The goal is to understand how prompts, context, model inference, tools, retrieval, evaluation, observability, security, and reliability fit together as one system.
+
+## What This Handbook Teaches
+
+You will learn how an AI request moves through an application, how context is built, how model servers generate tokens, how retrieval systems provide knowledge, how tools are called safely, how agents are controlled, how evaluations catch regressions, and how production systems are monitored and secured.
+
+The chapters are intentionally long-form. Each major chapter is designed to work as a standalone tutorial with mental models, examples, tradeoffs, failure modes, and exercises.
+
+## How To Read It
+
+Read Part I first if you are new to AI systems. It gives you the vocabulary for the rest of the book.
+
+After that, choose a path:
+
+- Read the inference chapters if you care about latency, throughput, GPU memory, or serving cost.
+- Read the application chapters if you are building AI products with structured outputs, tools, agents, and routing.
+- Read the retrieval chapters if your system needs external knowledge.
+- Read the evaluation and production chapters before shipping.
+- Read the security chapters before connecting models to private data or powerful tools.
+
+## How The Handbook Is Organized
+
+The content follows the outline in \`list.md\` and is split into part modules under \`content/docs/chapters\`. The Fumadocs-style shell stays generic: chapter data controls routes, sidebar groups, previous/next navigation, and the right-side table of contents.
+`,
 };
 
-export const docPages: DocPage[] = [
-  {
-    slug: ['getting-started'],
-    title: 'Quick Start',
-    description: 'Getting Started with Fumadocs',
-    group: 'Introduction',
-    toc: ['Introduction', 'Terminology', 'Automatic Installation', 'Enjoy!', 'FAQ', 'Learn More'],
-    body: `# Quick Start
-
-Getting Started with Fumadocs
-
-## Introduction
-
-Fumadocs (Foo-ma docs) is a documentation framework, designed to be fast, flexible, and composes seamlessly into your React framework. It consists of multiple layers:
-
-- **Fumadocs Core** handles most of the logic, including document search, content source adapters, and Markdown extensions.
-- **Fumadocs UI** offers a beautiful default theme for documentation sites and interactive components.
-- **Content Source** can be a CMS or local data layer like Fumadocs MDX.
-- **Fumadocs CLI** installs UI components and automates customization.
-
-Want to learn more? Read the introduction and then customize the layout.
-
-### Terminology
-
-Markdown is a markup language for creating formatted text. MDX extends Markdown with JSX components.
-
-Some basic knowledge of React.js is useful for deeper customization.
-
-> Try Fumadocs with simpler DX. Fumapress manages routing, llms.txt, MCP, and other common features on top of Fumadocs.
-
-## Automatic Installation
-
-A minimum version of Node.js 22 is required.
-
-## Run it
-
-\`\`\`bash
-npm create fumadocs-app
-\`\`\`
-
-It will ask you which framework and content source to use.
-
-## Enjoy!
-
-Create your first MDX file in the docs folder.
-
-\`\`\`mdx
----
-title: Hello World
----
-
-## Yo what's up
-\`\`\`
-
-Run the app in development mode and open \`/docs\`.
-
-\`\`\`bash
-npm run dev
-\`\`\`
-
-## FAQ
-
-### How do I change the base route?
-
-Routing is handled by your React framework. Rename the route directory first, then update the base URL in your source config.
-
-### Will dynamic routes be slow?
-
-No. Next.js turns dynamic routes into static routes when \`generateStaticParams\` is configured.
-
-## Learn More
-
-For authoring docs, read the Markdown, Navigation, Page Tree, and Components pages.
-`,
-  },
-  {
-    slug: ['customize'],
-    title: 'What is Fumadocs',
-    description: 'Introducing the docs framework you can break.',
-    group: 'Introduction',
-    toc: ['Overview', 'Layers', 'Design Goals'],
-    body: `# What is Fumadocs
-
-## Overview
-
-Fumadocs is split into composable layers so you can adopt only the pieces you need.
-
-## Layers
-
-- Content source
-- Core routing/search/page-tree logic
-- UI layouts and components
-
-## Design Goals
-
-The framework aims to stay flexible enough for engineers while providing a polished docs UI out of the box.
-`,
-  },
-  {
-    slug: ['manual-installation'],
-    title: 'Manual Installation',
-    description: 'Install the pieces by hand.',
-    group: 'Introduction',
-    toc: ['Install Packages', 'Configure Source', 'Add Layout'],
-    body: `# Manual Installation
-
-## Install Packages
-
-\`\`\`bash
-npm install fumadocs-core fumadocs-ui
-\`\`\`
-
-## Configure Source
-
-Create a source loader that maps your content tree to docs routes.
-
-## Add Layout
-
-Wrap docs pages with a layout that receives the page tree.
-`,
-  },
-  {
-    slug: ['writing', 'markdown'],
-    title: 'Markdown',
-    description: 'Author rich content with Markdown and MDX.',
-    group: 'Writing',
-    toc: ['Markdown', 'Code Blocks', 'Components'],
-    body: `# Markdown
-
-## Markdown
-
-Markdown stays readable in source control while still supporting rich docs pages.
-
-## Code Blocks
-
-\`\`\`tsx
-export function Button() {
-  return <button>Click</button>;
-}
-\`\`\`
-
-## Components
-
-MDX lets you use React components inside content where needed.
-`,
-  },
+const sourcePages: DocPage[] = [
+  overviewPage,
+  ...part01FoundationsPages,
+  ...part02HighPerformanceInferencePages,
+  ...part03BuildingAiApplicationsPages,
+  ...part04RetrievalSystemsPages,
+  ...part05EvaluationProductionEngineeringPages,
+  ...part06AiSecurityPages,
+  ...part07StrategyFailureCaseStudiesPages,
+  ...appendixPages,
 ];
 
-export const docGroups = ['Introduction', 'Writing', 'Configurations', 'Integrations'];
+export const docPages: DocPage[] = sourcePages.flatMap((page) => expandSubchapters(page));
+
+export const docGroups = [
+  'Start Here',
+  ...Array.from(new Set(docPages.map((page) => page.group))).filter((group) => group !== 'Start Here'),
+];
 
 export function getDocBySlug(slug: string[]) {
-  const normalized = slug.length ? slug : ['getting-started'];
+  const normalized = slug.length ? slug : ['overview'];
   return docPages.find((p) => p.slug.join('/') === normalized.join('/')) ?? null;
+}
+
+function expandSubchapters(page: DocPage): DocPage[] {
+  const sections = findNumberedSections(page.body);
+  if (sections.length === 0) return [page];
+
+  const intro = page.body.slice(0, sections[0].index).trim();
+  const children = sections.map((section, index) => {
+    const next = sections[index + 1]?.index ?? page.body.length;
+    const rawBody = page.body.slice(section.index, next).trim();
+    const childTitle = section.title.replace(/^#+\s*/, '').trim();
+    const childBody = rawBody.replace(/^##\s+/, '# ');
+
+    return {
+      slug: [...page.slug, slugify(childTitle)],
+      title: childTitle,
+      description: page.title,
+      group: page.group,
+      toc: getMarkdownHeadings(childBody),
+      body: childBody,
+      parentSlug: page.slug,
+      parentTitle: page.title,
+    } satisfies DocPage;
+  });
+
+  const overviewBody = [
+    intro || `# ${page.title}`,
+    '',
+    '## Subchapters',
+    '',
+    ...children.flatMap((child) => [
+      `### ${child.title}`,
+      '',
+      child.body
+        .split('\n')
+        .find((line) => line.trim() && !line.startsWith('#'))
+        ?.trim() ?? 'Open this subchapter from the sidebar.',
+      '',
+    ]),
+  ].join('\n');
+
+  return [
+    {
+      ...page,
+      title: `${page.title} - Overview`,
+      toc: ['Subchapters', ...children.map((child) => child.title)],
+      body: overviewBody,
+      isChapterOverview: true,
+    },
+    ...children,
+  ];
+}
+
+function findNumberedSections(markdown: string) {
+  return [...markdown.matchAll(/^##\s+((?:\d+|[A-Z])\.\d+\s+.+)$/gm)].map((match) => ({
+    title: match[1],
+    index: match.index ?? 0,
+  }));
+}
+
+function getMarkdownHeadings(markdown: string) {
+  return [...markdown.matchAll(/^#{2,3}\s+(.+)$/gm)].map((match) => match[1].trim());
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
 }
