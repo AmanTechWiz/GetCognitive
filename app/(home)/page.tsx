@@ -6,14 +6,12 @@ import {
   FileIcon,
   FileTextIcon,
   SearchIcon,
-  TerminalIcon,
 } from 'lucide-react';
 import { Marquee } from '@/app/(home)/marquee';
 import { ServerCodeBlock } from '@/components/codeblock';
 import {
   Hero,
   AgnosticBackground,
-  CreateAppAnimation,
   PreviewImages,
   SecondSectionBackdrop,
 } from '@/app/(home)/page.client';
@@ -102,28 +100,49 @@ export default function Page() {
         </p>
         <div className="relative p-4 rounded-2xl col-span-full z-2 overflow-hidden border bg-black md:p-8">
           <SecondSectionBackdrop />
-          <div className="mx-auto w-full max-w-[800px] p-2 bg-fd-card text-fd-card-foreground border rounded-2xl shadow-lg">
-            <div className="flex flex-row gap-2">
-              <h2 className="text-brand content-center font-mono font-bold uppercase border-2 border-brand/50 px-2 rounded-xl">
-                Try it out
-              </h2>
-              <ServerCodeBlock
-                code="pnpm create fumadocs-app"
-                lang="bash"
-                codeblock={{
-                  className: 'bg-fd-secondary flex-1',
-                }}
-              />
-            </div>
-
-            <div className="relative bg-fd-secondary rounded-xl mt-2 border shadow-md">
-              <div className="flex flex-row items-center gap-2 border-b p-2 text-fd-muted-foreground">
-                <TerminalIcon className="size-4" />
-                <span className="text-xs font-medium">Terminal</span>
-                <div className="ms-auto me-2 size-2 rounded-full bg-red-400" />
+          <div className="mx-auto w-full max-w-none">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2">
+                <p className="text-xs text-brand font-medium rounded-full px-3 py-1 border border-brand/50 w-fit">
+                  Interactive demo
+                </p>
+                <p className="text-sm text-fd-muted-foreground">
+                  Mint Playground — The Complete Shelf
+                </p>
               </div>
-
-              <CreateAppAnimation className="p-2 text-fd-secondary-foreground/80" />
+              <Link
+                href="/shelf"
+                className={cn(buttonVariants({ variant: 'secondary' }), 'max-sm:text-sm')}
+              >
+                Open full screen
+              </Link>
+            </div>
+            <div className="relative w-full overflow-hidden rounded-2xl border bg-black shadow-lg">
+              <div className="relative w-full aspect-[16/9]">
+                <iframe
+                  title="Mint Playground — The Complete Shelf"
+                  src="https://play.mint.gg/complete-shelf"
+                  className="absolute inset-0 size-full"
+                  loading="lazy"
+                  allow="autoplay; fullscreen; xr-spatial-tracking; clipboard-write; accelerometer; gyroscope"
+                  allowFullScreen
+                  sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-pointer-lock allow-downloads allow-popups-to-escape-sandbox"
+                />
+              </div>
+              <noscript>
+                <div className="p-4 text-sm text-fd-muted-foreground">
+                  JavaScript is required to view the embedded shelf.{' '}
+                  <a
+                    href="https://play.mint.gg/complete-shelf"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="text-brand hover:underline"
+                  >
+                    Open it in a new tab
+                  </a>
+                  .
+                </div>
+              </noscript>
             </div>
           </div>
         </div>
