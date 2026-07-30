@@ -19,6 +19,7 @@ import {
 import StoryImage from './story.png';
 import Bg2Image from './bg-2.png';
 import { StoryControl } from '@/components/story-control';
+import { BooksScene } from '@/components/books-scene';
 
 const headingVariants = cva('font-medium tracking-tight', {
   variants: {
@@ -120,12 +121,9 @@ function BooksSection() {
   return (
     <section className="relative mx-auto mt-10 w-full max-w-[1400px] overflow-hidden rounded-2xl border bg-[#020604] p-2 shadow-2xl shadow-green-950/30">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,197,94,0.24),transparent_42%),linear-gradient(135deg,rgba(2,6,4,0.75),rgba(5,25,13,0.45))]" />
-      <iframe
-        title="Cognitive Books"
-        src="/books/index.html"
-        className="relative h-[760px] w-full rounded-xl border border-white/10 bg-black max-md:h-[640px]"
-        loading="lazy"
-      />
+      <div className="relative h-[760px] w-full rounded-xl border border-white/10 bg-black max-md:h-[640px]">
+        <BooksScene />
+      </div>
     </section>
   );
 }

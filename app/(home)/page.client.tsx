@@ -5,6 +5,7 @@ import {
   Fragment,
   type HTMLAttributes,
   type ReactElement,
+  type ReactNode,
   type RefObject,
   useEffect,
   useRef,
@@ -21,17 +22,35 @@ import SecondSectionBg from './2nd-section-bg.png';
 import { useTheme } from 'next-themes';
 import dynamic from 'next/dynamic';
 
-const GrainGradient = dynamic(
-  () => import('@paper-design/shaders-react').then((mod) => mod.GrainGradient),
-  {
-    ssr: false,
-  },
+function createSafeShaderComponent(loader: () => Promise<any>) {
+  const component = dynamic(
+    async () => {
+      try {
+        const mod = await loader();
+        return { default: mod.default ?? mod };
+      } catch (error) {
+        console.warn('Shader component failed to load, falling back to a no-op component.', error);
+        return {
+          default: ({ children, ...props }: ComponentProps<'div'> & { children?: ReactNode }) => (
+            <div {...props}>{children ?? null}</div>
+          ),
+        };
+      }
+    },
+    {
+      ssr: false,
+      loading: () => null,
+    },
+  );
+
+  return component as unknown as React.ComponentType<any>;
+}
+
+const GrainGradient = createSafeShaderComponent(() =>
+  import('@paper-design/shaders-react').then((mod) => mod.GrainGradient),
 );
-const ImageDithering = dynamic(
-  () => import('@paper-design/shaders-react').then((mod) => mod.ImageDithering),
-  {
-    ssr: false,
-  },
+const ImageDithering = createSafeShaderComponent(() =>
+  import('@paper-design/shaders-react').then((mod) => mod.ImageDithering),
 );
 
 export function Hero() {
