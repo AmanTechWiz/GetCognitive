@@ -7,16 +7,16 @@ export function StoryControl() {
         <div className="size-3 rounded-full bg-red-400" />
         <div className="size-3 rounded-full bg-yellow-400" />
         <div className="size-3 rounded-full bg-green-400" />
-        <span className="ms-auto text-xs text-fd-muted-foreground">Preview</span>
+        <span className="ms-auto text-xs text-fd-muted-foreground">Concept Preview</span>
       </div>
       <div className="mt-4 grid gap-3">
-        <button className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-foreground">
-          Primary Button
-        </button>
-        <div className="grid grid-cols-3 gap-2">
-          <div className="h-12 rounded-lg border bg-fd-card" />
-          <div className="h-12 rounded-lg border bg-fd-card" />
-          <div className="h-12 rounded-lg border bg-fd-card" />
+        <div className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-brand-foreground">
+          Agentic Retrieval
+        </div>
+        <div className="grid gap-2 text-xs text-fd-muted-foreground">
+          <div className="rounded-lg border bg-fd-card p-2">Visual explainer</div>
+          <div className="rounded-lg border bg-fd-card p-2">Architecture diagram</div>
+          <div className="rounded-lg border bg-fd-card p-2">Curated resources</div>
         </div>
       </div>
     </div>

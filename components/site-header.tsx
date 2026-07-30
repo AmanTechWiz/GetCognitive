@@ -11,11 +11,11 @@ import {
   FileCode2,
   LayoutTemplate,
   Moon,
-  Search,
   Sun,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { CognitiveSearchTrigger } from '@/components/cognitive-search';
 
 const navItems = [
   { href: '/blog', label: 'Newsletter', icon: AlbumIcon },
@@ -92,13 +92,10 @@ export function SiteHeader() {
           </nav>
 
           <div className="ms-auto hidden flex-row items-center justify-end gap-1.5 lg:flex">
-            <button className="flex h-9 w-full max-w-[240px] items-center gap-2 rounded-full border bg-fd-secondary px-3 text-sm text-fd-muted-foreground">
-              <Search className="size-4" />
-              <span>Search</span>
-              <kbd className="ms-auto rounded-md border bg-fd-background px-1.5 py-0.5 text-[11px]">
-                Ctrl K
-              </kbd>
-            </button>
+            <CognitiveSearchTrigger
+              mode="dropdown"
+              className="h-9 max-w-[240px] rounded-full bg-fd-secondary"
+            />
             <ThemeToggle />
             <a
               href="https://github.com/fuma-nama/fumadocs"
@@ -112,9 +109,7 @@ export function SiteHeader() {
           </div>
 
           <div className="ms-auto flex flex-row items-center -me-1.5 lg:hidden">
-            <button className="inline-flex size-10 items-center justify-center rounded-md p-2 text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground">
-              <Search className="size-4" />
-            </button>
+            <CognitiveSearchTrigger className="size-10 justify-center rounded-md border-0 bg-transparent p-2 [&_kbd]:hidden [&_span]:hidden" />
             <button className="inline-flex size-10 items-center justify-center rounded-md p-2 text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground">
               <ChevronDown className="size-4" />
             </button>

@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookOpen, Check, ChevronRight, ChevronsUpDown, FileText, Search, SidebarIcon } from 'lucide-react';
+import { BookOpen, Check, ChevronRight, ChevronsUpDown, FileText, SidebarIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { docGroups, docPages } from '@/content/docs/pages';
 import { FumadocsIcon } from '@/components/fumadocs-icon';
 import { GithubMark, ThemeToggle } from '@/components/site-header';
+import { CognitiveSearchTrigger } from '@/components/cognitive-search';
 
 const sections = [
   {
@@ -85,13 +86,7 @@ export function DocsSidebar() {
               <SidebarIcon className="size-4" />
             </button>
           </div>
-          <button className="flex h-10 w-full items-center gap-2 rounded-lg border bg-fd-secondary/50 px-3 text-sm text-fd-muted-foreground">
-            <Search className="size-4" />
-            <span>Search</span>
-            <kbd className="ms-auto rounded-md border bg-fd-background px-1.5 py-0.5 text-[11px]">
-              Ctrl K
-            </kbd>
-          </button>
+          <CognitiveSearchTrigger />
           <div className="relative">
             <button
               onClick={() => setOpen((value) => !value)}

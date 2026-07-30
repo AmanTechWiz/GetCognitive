@@ -16,7 +16,6 @@ import MainImg from './main.png';
 import OpenAPIImg from './openapi.png';
 import NotebookImg from './notebook.png';
 import { cva } from 'class-variance-authority';
-import HeroImage from './hero-preview.jpeg';
 import AgentHeroImage from './agent-hero.png';
 import SecondSectionBg from './2nd-section-bg.png';
 import { useTheme } from 'next-themes';
@@ -37,10 +36,9 @@ const ImageDithering = dynamic(
 
 export function Hero() {
   const { resolvedTheme } = useTheme();
-  const ref = useRef<HTMLImageElement | null>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
   const visible = useIsVisible(ref);
   const [showShaders, setShowShaders] = useState(false);
-  const [imageReady, setImageReady] = useState(false);
 
   useEffect(() => {
     setTimeout(() => {
@@ -83,18 +81,80 @@ export function Hero() {
           maxPixelCount={960 * 640}
         />
       )}
-      <Image
+      <div
         ref={ref}
-        src={HeroImage}
-        alt="hero-image"
         className={cn(
-          'absolute top-[460px] left-[20%] max-w-[1200px] rounded-xl border-2 lg:top-[400px]',
-          imageReady ? 'animate-in fade-in duration-400' : 'invisible',
+          'absolute top-[430px] left-[17%] w-[min(1040px,72vw)] rounded-2xl border border-fd-border/80 bg-fd-card/92 p-2 shadow-[0_30px_120px_rgba(15,80,25,0.35)] backdrop-blur-xl lg:top-[385px] max-md:hidden',
+          showShaders ? 'animate-in fade-in slide-in-from-bottom-4 duration-500' : 'invisible',
         )}
-        onLoad={() => setImageReady(true)}
-        priority
-      />
+      >
+        <HeroArticlePreview />
+      </div>
     </>
+  );
+}
+
+function HeroArticlePreview() {
+  return (
+    <article className="overflow-hidden rounded-xl border border-fd-border/70 bg-gradient-to-br from-fd-background via-fd-card to-brand/10">
+      <div className="grid gap-8 p-8 md:grid-cols-[1.55fr_0.9fr]">
+        <div>
+          <div className="mb-5 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.24em] text-brand">
+            <span>Cognitive Dispatch</span>
+            <span className="h-1 w-1 rounded-full bg-brand" />
+            <span>7 min read</span>
+          </div>
+          <h2 className="text-balance text-4xl font-semibold tracking-tight text-fd-foreground md:text-5xl">
+            Agentic Retrieval Is Becoming the New Search Layer
+          </h2>
+          <p className="mt-5 max-w-2xl text-pretty text-base leading-7 text-fd-muted-foreground">
+            AI systems are moving beyond static RAG into loops that plan,
+            inspect, rerank, cite evidence, and keep context aligned while work
+            is still in progress.
+          </p>
+          <div className="mt-7 flex flex-wrap gap-2 text-xs">
+            {['Agent Harnesses', 'Context Engineering', 'Evaluation Loops'].map(
+              (tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full border border-brand/25 bg-brand/10 px-3 py-1 text-brand"
+                >
+                  {tag}
+                </span>
+              ),
+            )}
+          </div>
+        </div>
+        <aside className="rounded-xl border border-brand/20 bg-black/[0.03] p-5 dark:bg-white/[0.04]">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-fd-muted-foreground">
+            Concept Map
+          </p>
+          <div className="mt-5 space-y-3 text-sm">
+            {[
+              ['Search', 'Find candidate evidence'],
+              ['Inspect', 'Read and compare sources'],
+              ['Rerank', 'Score what matters now'],
+              ['Cite', 'Return traceable answers'],
+            ].map(([title, body], index) => (
+              <div
+                key={title}
+                className="flex gap-3 rounded-lg border border-fd-border/70 bg-fd-background/70 p-3"
+              >
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand/15 text-xs font-semibold text-brand">
+                  {index + 1}
+                </span>
+                <span>
+                  <span className="block font-medium text-fd-foreground">
+                    {title}
+                  </span>
+                  <span className="text-fd-muted-foreground">{body}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </article>
   );
 }
 

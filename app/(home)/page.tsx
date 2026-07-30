@@ -9,13 +9,13 @@ import {
 } from 'lucide-react';
 import { Marquee } from '@/app/(home)/marquee';
 import { ServerCodeBlock } from '@/components/codeblock';
+import { CognitiveSearchPanel } from '@/components/cognitive-search';
 import {
   Hero,
   AgnosticBackground,
   PreviewImages,
   SecondSectionBackdrop,
 } from '@/app/(home)/page.client';
-import ShadcnImage from './shadcn.png';
 import StoryImage from './story.png';
 import Bg2Image from './bg-2.png';
 import { StoryControl } from '@/components/story-control';
@@ -79,9 +79,7 @@ export default function Page() {
               Start Learning
             </Link>
             <a
-              href="https://stackblitz.com/github/fuma-nama/fumadocs/tree/main/examples/stackblitz"
-              target="_blank"
-              rel="noreferrer noopener"
+              href="/docs"
               className={cn(buttonVariants({ variant: 'secondary' }), 'max-sm:text-sm')}
             >
               Browse Library
@@ -100,58 +98,35 @@ export default function Page() {
         </p>
         <div className="relative p-4 rounded-2xl col-span-full z-2 overflow-hidden border bg-black md:p-8">
           <SecondSectionBackdrop />
-          <div className="mx-auto w-full max-w-none">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2">
-                <p className="text-xs text-brand font-medium rounded-full px-3 py-1 border border-brand/50 w-fit">
-                  Interactive demo
-                </p>
-                <p className="text-sm text-fd-muted-foreground">
-                  Mint Playground — The Complete Shelf
-                </p>
-              </div>
-              <Link
-                href="/shelf"
-                className={cn(buttonVariants({ variant: 'secondary' }), 'max-sm:text-sm')}
-              >
-                Open full screen
-              </Link>
-            </div>
-            <div className="relative w-full overflow-hidden rounded-2xl border bg-black shadow-lg">
-              <div className="relative w-full aspect-[16/9]">
-                <iframe
-                  title="Mint Playground — The Complete Shelf"
-                  src="https://play.mint.gg/complete-shelf"
-                  className="absolute inset-0 size-full"
-                  loading="lazy"
-                  allow="autoplay; fullscreen; xr-spatial-tracking; clipboard-write; accelerometer; gyroscope"
-                  allowFullScreen
-                  sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-pointer-lock allow-downloads allow-popups-to-escape-sandbox"
-                />
-              </div>
-              <noscript>
-                <div className="p-4 text-sm text-fd-muted-foreground">
-                  JavaScript is required to view the embedded shelf.{' '}
-                  <a
-                    href="https://play.mint.gg/complete-shelf"
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="text-brand hover:underline"
-                  >
-                    Open it in a new tab
-                  </a>
-                  .
-                </div>
-              </noscript>
-            </div>
-          </div>
+          <CognitiveSearchPanel
+            embedded
+            autoType
+            className="mx-auto h-[350px] w-full max-w-[800px]"
+          />
         </div>
+        {/*
         <Feedback />
         <Aesthetics />
+        */}
 
         <ForEngineers />
       </div>
+      <BooksSection />
     </main>
+  );
+}
+
+function BooksSection() {
+  return (
+    <section className="relative mx-auto mt-10 w-full max-w-[1400px] overflow-hidden rounded-2xl border bg-[#020604] p-2 shadow-2xl shadow-green-950/30">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,197,94,0.24),transparent_42%),linear-gradient(135deg,rgba(2,6,4,0.75),rgba(5,25,13,0.45))]" />
+      <iframe
+        title="Cognitive Books"
+        src="/books/index.html"
+        className="relative h-[760px] w-full rounded-xl border border-white/10 bg-black max-md:h-[640px]"
+        loading="lazy"
+      />
+    </section>
   );
 }
 
@@ -174,17 +149,16 @@ function Story() {
               }),
             )}
           >
-            Fumadocs Story
+            Concept Explorer
           </h2>
           <p className="text-sm mb-4">
-            Built for UI component libraries – bring an interactive playground to showcase your
-            components vividly.
+            Open-source explainers turn new AI terms into visual, searchable learning paths.
           </p>
           <Link
-            href="/docs/integrations/story"
+            href="/docs"
             className={cn(buttonVariants({ variant: 'primary', className: 'text-sm py-2 mb-4' }))}
           >
-            Explore
+            Open Handbook
           </Link>
         </div>
         <StoryControl />
@@ -319,7 +293,7 @@ function ForEngineers() {
           }),
         )}
       >
-        Docs for Engineers.
+        Learn AI Systems as They Evolve.
       </h2>
       <Story />
 
@@ -332,13 +306,20 @@ function ForEngineers() {
             }),
           )}
         >
-          Framework Agnostic
+          Format Agnostic
         </h3>
         <p className="mb-20">
-          Official support for Next.js, Tanstack Start, React Router, Waku — portable to any
-          React.js framework.
+          Cognitive works as an open learning layer: readable by non-dev writers, engineers,
+          students, and AI agents.
         </p>
-        <div className="flex flex-row gap-2 mt-auto bg-brand text-brand-foreground rounded-xl p-2 w-fit">
+        <div className="mt-auto grid grid-cols-2 gap-2 text-xs">
+          {['Writers', 'Developers', 'Students', 'AI Agents'].map((item) => (
+            <div key={item} className="rounded-xl border border-brand/30 bg-brand/10 px-3 py-2 text-brand">
+              {item}
+            </div>
+          ))}
+        </div>
+        <div className="hidden flex-row gap-2 mt-auto bg-brand text-brand-foreground rounded-xl p-2 w-fit">
           <svg
             fill="currentColor"
             role="img"
@@ -391,35 +372,34 @@ function ForEngineers() {
         )}
       >
         <h3 className={cn(headingVariants({ variant: 'h3', className: 'mb-6' }))}>
-          A truly composable framework.
+          A living map of AI concepts.
         </h3>
         <p className="mb-8">
-          Separated as <span className="text-brand">Content</span> →{' '}
-          <span className="text-brand">Core</span> → <span className="text-brand">UI</span>,
-          offering the high composability that engineers love — you can use Fumadocs as a library,
-          without adapting the entire framework.
+          Concepts connect as <span className="text-brand">Terms</span> →{' '}
+          <span className="text-brand">Patterns</span> → <span className="text-brand">Systems</span>,
+          so readers can understand how every new AI idea fits into real engineering work.
         </p>
         <div className="mt-auto flex flex-col gap-2 @container mask-[linear-gradient(to_bottom,white,transparent)]">
           {[
             {
-              name: 'fumadocs-mdx',
-              description: 'Use MDX in your React framework elegantly.',
+              name: 'agent-harnesses',
+              description: 'Runtime structure for tools, memory, traces, and budgets.',
             },
             {
-              name: 'fumadocs-core',
-              description: 'Headless library for building docs + handling content.',
+              name: 'context-engineering',
+              description: 'Design inputs, retrieval, and memory around model limits.',
             },
             {
-              name: 'fumadocs-ui',
-              description: 'UI library for building docs.',
+              name: 'loop-engineering',
+              description: 'Plan, execute, verify, and recover in controlled cycles.',
             },
             {
-              name: 'fumadocs-openapi',
-              description: 'Extend Fumadocs to render OpenAPI docs.',
+              name: 'model-context-protocol',
+              description: 'Connect models to tools and data through shared interfaces.',
             },
             {
-              name: 'fumadocs-obsidian',
-              description: 'Extend Fumadocs to handle Obsidian-style Markdown.',
+              name: 'evaluation-patterns',
+              description: 'Measure quality, safety, reliability, and regression risk.',
             },
           ].map((item) => (
             <div
@@ -434,25 +414,25 @@ function ForEngineers() {
       </div>
       <div className={cn(cardVariants())}>
         <h3 className={cn(headingVariants({ variant: 'h3', className: 'mb-6' }))}>
-          Adopts your content.
+          Community-maintained knowledge.
         </h3>
         <p className="mb-4">
-          Designed to integrate with any <span className="text-brand">content source</span>,
-          Fumadocs works on MDX, Content Collections, and even your own CMS.
+          Designed for open contribution: each topic can include <span className="text-brand">sources</span>,
+          notes, diagrams, examples, and practical handbooks.
         </p>
         <div className="flex flex-row w-fit items-center gap-4 mb-6">
           {[
             {
-              href: 'https://github.com/fuma-nama/fumadocs-basehub',
-              text: 'BaseHub CMS',
+              href: '/docs',
+              text: 'Handbook',
             },
             {
-              href: 'https://github.com/fuma-nama/fumadocs-sanity',
-              text: 'Sanity',
+              href: '/docs/appendices/appendix-e-glossary',
+              text: 'Glossary',
             },
             {
-              href: 'https://github.com/MFarabi619/fumadocs-payloadcms',
-              text: 'Payload CMS',
+              href: '/docs/appendices/appendix-b-engineering-patterns',
+              text: 'Patterns',
             },
           ].map((item) => (
             <a
@@ -466,20 +446,7 @@ function ForEngineers() {
             </a>
           ))}
         </div>
-        <ServerCodeBlock
-          codeblock={{
-            title: 'Fumadocs MDX',
-          }}
-          code={`
-import { loader } from 'fumadocs-core/source';
-import { docs } from 'collections/server';
-
-export const source = loader({
-  source: docs.toFumadocsSource(),
-  baseUrl: '/docs',
-});`.trim()}
-          lang="ts"
-        />
+        <CompactBlogPostPreview />
       </div>
       <div
         className={cn(cardVariants({ className: 'relative overflow-hidden min-h-[400px] z-2' }))}
@@ -491,9 +458,9 @@ export const source = loader({
         />
         <div className="absolute top-8 left-4 w-[70%] flex flex-col bg-neutral-50/80 backdrop-blur-lg border text-neutral-800 p-2 rounded-xl shadow-lg shadow-black dark:bg-neutral-900/80 dark:text-neutral-200">
           <p className="px-2 pb-2 font-medium border-b mb-2 text-neutral-500 dark:text-neutral-400">
-            My CMS
+            Cognitive Library
           </p>
-          {['My Page', 'Another Page', 'Components', 'Getting Started'].map((page) => (
+          {['Agentic Retrieval', 'Context Engineering', 'AI Memory', 'Loop Evaluation'].map((page) => (
             <div
               key={page}
               className="flex items-center gap-2 p-2 rounded-lg hover:bg-neutral-400/20"
@@ -501,60 +468,116 @@ export const source = loader({
               <FileIcon className="stroke-neutral-500 size-4 dark:stroke-neutral-400" />
               <span className="text-sm">{page}</span>
               <div className="px-3 py-1 font-mono rounded-full bg-brand text-xs text-brand-foreground ms-auto">
-                Article
+                Concept
               </div>
             </div>
           ))}
         </div>
 
-        <div className="absolute bottom-8 right-4 w-[70%] flex flex-col bg-neutral-100 text-neutral-800 rounded-xl border shadow-lg shadow-black dark:bg-neutral-900 dark:text-neutral-200">
-          <div className="px-4 py-2 text-neutral-500 border-b font-medium dark:text-neutral-400">
-            MDX Editor
-          </div>
-          <pre className="text-base text-neutral-800 overflow-auto p-4 dark:text-neutral-400">
-            {`---
-title: Hello World
----
-
-# Hello World!
-
-This is my first document.`}
-          </pre>
+        <div className="absolute bottom-8 right-4 w-[70%] shadow-lg shadow-black">
+          <CompactBlogPostPreview compact />
         </div>
       </div>
       <div className={cn(cardVariants(), 'flex flex-col max-md:pb-0')}>
         <h3 className={cn(headingVariants({ variant: 'h3', className: 'mb-6' }))}>
-          Enhance your search experience.
+          Find new terms fast.
         </h3>
-        <p className="mb-6">Integrate with Orama Search and Algolia Search in your docs easily.</p>
+        <p className="mb-6">
+          Search across real Cognitive articles, headings, and body text as new AI terms are added.
+        </p>
         <Link
-          href="/docs/headless/search/algolia"
+          href="/docs"
           className={cn(buttonVariants({ className: 'w-fit mb-8' }))}
         >
-          Learn More
+          Search Library
         </Link>
         <Search />
       </div>
       <div className={cn(cardVariants(), 'flex flex-col p-0 overflow-hidden')}>
         <div className="p-6 mb-2">
           <h3 className={cn(headingVariants({ variant: 'h3', className: 'mb-6' }))}>
-            The shadcn/ui for docs
+            Visual explainers for AI terms
           </h3>
           <p className="mb-6">
-            Fumadocs CLI creates interactive components for your docs, offering a rich experience to
-            your users.
+            Replace buzzwords with diagrams, examples, and source-backed context that make the idea
+            understandable.
           </p>
-          <Link href="/docs/cli" className={cn(buttonVariants({ className: 'w-fit' }))}>
-            Commands
+          <Link href="/docs/overview" className={cn(buttonVariants({ className: 'w-fit' }))}>
+            Start Learning
           </Link>
         </div>
-        <Image src={ShadcnImage} alt="shadcn" className="mt-auto flex-1 w-full object-cover" />
+        <ConceptFlowDiagram />
       </div>
     </>
   );
 }
 
 const searchItemVariants = cva('rounded-md p-2 text-sm text-fd-popover-foreground');
+
+function CompactBlogPostPreview({ compact = false }: { compact?: boolean }) {
+  return (
+    <article
+      className={cn(
+        'overflow-hidden rounded-xl border border-brand/20 bg-fd-card/90 text-fd-foreground shadow-xl backdrop-blur-md',
+        compact && 'bg-neutral-50/90 text-neutral-900 dark:bg-neutral-950/90 dark:text-neutral-100',
+      )}
+    >
+      <div className="border-b border-fd-border/70 px-4 py-3">
+        <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-brand">
+          Cognitive Blog
+        </p>
+      </div>
+      <div className={cn('p-4', compact ? 'space-y-3' : 'space-y-4')}>
+        <div className="flex flex-wrap gap-2 text-[11px] text-fd-muted-foreground">
+          <span>Agentic Retrieval</span>
+          <span>•</span>
+          <span>Updated weekly</span>
+          <span>•</span>
+          <span>5 min read</span>
+        </div>
+        <h4 className={cn('font-semibold tracking-tight', compact ? 'text-xl' : 'text-2xl')}>
+          How agentic retrieval changes AI search
+        </h4>
+        <p className={cn('text-fd-muted-foreground', compact ? 'text-sm leading-6' : 'text-sm leading-6')}>
+          Modern AI systems do more than fetch documents. They plan searches, inspect evidence,
+          compare sources, and decide when the answer is reliable enough to cite.
+        </p>
+        <div className="grid gap-2 text-xs sm:grid-cols-3">
+          {['Plan', 'Inspect', 'Cite'].map((item) => (
+            <span
+              key={item}
+              className="rounded-lg border border-brand/25 bg-brand/10 px-3 py-2 text-brand"
+            >
+              {item}
+            </span>
+          ))}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function ConceptFlowDiagram() {
+  return (
+    <div className="mt-auto grid gap-3 border-t bg-black p-6 text-emerald-50">
+      {[
+        ['new term', 'Agentic Retrieval'],
+        ['explain', 'Search + inspect + rerank'],
+        ['connect', 'RAG → Agents → Evaluation'],
+      ].map(([label, value], index) => (
+        <div key={label} className="flex items-center gap-3">
+          <span className="grid size-8 place-items-center rounded-full border border-brand/40 bg-brand/10 font-mono text-[11px] text-brand">
+            {index + 1}
+          </span>
+          <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 p-3">
+            <p className="text-[10px] uppercase tracking-[0.24em] text-emerald-300/70">{label}</p>
+            <p className="mt-1 text-sm font-medium">{value}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Search() {
   return (
@@ -565,10 +588,10 @@ function Search() {
       </div>
       <div className="border-t p-2">
         {[
-          ['Getting Started', 'Use Fumadocs in your project.'],
-          ['Components', 'The UI Components for your docs.'],
-          ['MDX Content', 'Using MDX for content.'],
-          ['User Guide', 'How to use Fumadocs.'],
+          ['Agentic Retrieval', 'Search, inspect, rerank, and cite evidence.'],
+          ['Context Engineering', 'Shape prompts, memory, and retrieval inputs.'],
+          ['AI Memory', 'Store durable preferences and retrieve safely.'],
+          ['Loop Evaluation', 'Measure agent steps, budgets, and regressions.'],
         ].map(([title, description], i) => (
           <div key={i} className={cn(searchItemVariants(), i === 0 && 'bg-fd-accent')}>
             <div className="flex flex-row items-center gap-2">
