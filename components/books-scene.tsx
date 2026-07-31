@@ -1,60 +1,163 @@
 'use client';
 
-/**
- * BookShowcase
- * ------------------------------------------------------------------------
- * Ported from a standalone HTML/Three.js page into a self-contained React
- * section. All the original logic (procedural cover painting, page-turn
- * physics, orbit drag, the "open slip" cursor affordance, the exit/return
- * choreography) is preserved — the changes are only in *how* it talks to
- * the DOM, so it can live inside a React tree instead of owning the page:
- *
- *  - `document.getElementById(...)` calls become refs.
- *  - `document.body.classList` (for `.detail-open` / `.transit`) becomes
- *    classList on this component's own root element.
- *  - `window.innerWidth/innerHeight` and viewport-relative pointer
- *    coordinates become the *container's* bounding rect, so this renders
- *    correctly as a section rather than assuming it owns the whole page.
- *  - The render loop, all event listeners, and the Three.js renderer are
- *    torn down on unmount (important in React StrictMode, which mounts
- *    effects twice in development).
- *
- * Requires `three` as a dependency (`npm i three` — types via `@types/three`
- * if you want them; this file deliberately stays loosely typed around the
- * Three.js internals since it's a direct port of imperative scene code).
- *
- * Cover art: `coverURL` on each entry in BOOKS points at
- * `/covers/<name>.jpg` for local art (drop files in `public/covers/`) or an
- * external URL. External hosts without CORS headers (most stock photo /
- * retailer CDNs) will silently fall back to the procedurally painted cover,
- * exactly as in the original.
- *
- * Note on Three.js versions: this was written against three r128's API
- * (`THREE.sRGBEncoding`, `renderer.outputEncoding`). If your `three`
- * version is r152+, swap those for `THREE.SRGBColorSpace` /
- * `renderer.outputColorSpace` respectively.
- * ------------------------------------------------------------------------
- */
-
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import './book-showcase.css';
 
-export function BooksScene() {
+import frontCoverMl from '@/public/books-showcase/front-cover-ml.png';
+import spineCoverMl from '@/public/books-showcase/center-cover-ml.png';
+import backCoverMl from '@/public/books-showcase/back-cover-ml.png';
+
+import frontCoverNets from '@/public/books-showcase/front-cover-neural-nets.png';
+import spineCoverNets from '@/public/books-showcase/center-cover-neural-nets.png';
+import backCoverNets from '@/public/books-showcase/back-oover-neural-nets.png';
+
+export interface BookCfg {
+  id: string;
+  title: string;
+  author: string;
+  year: string;
+  stars: number;
+  desc: string;
+
+  // Procedural cover painters. All optional — omit and supply `images` instead, or omit both for a generated placeholder.
+  front?: (x: CanvasRenderingContext2D, w: number, h: number) => void;
+  back?: (x: CanvasRenderingContext2D, w: number, h: number) => void;
+  spine?: (x: CanvasRenderingContext2D, w: number, h: number) => void;
+
+  // Image-based covers (png/webp/jpg/...). Takes priority over painters when present. Hosts without CORS headers fall back to the procedural/generated cover. 
+  images?: {
+    front?: string;
+    back?: string;
+    spine?: string;
+  };
+  /** @deprecated use images.front */
+  coverURL?: string | null;
+
+  // Page-edge trim color.
+  edge?: string;
+  backBg?: string;
+  backInk?: string;
+  spineBg?: string;
+  spineInk?: string;
+  spineFont?: string;
+  chapters?: string[];
+}
+
+export interface BooksSceneProps {
+  books?: BookCfg[];
+  heroTitle?: string;
+  showNav?: boolean;
+  showDetailPanel?: boolean;
+  /** Show prev/next arrows when there are more books than fit on screen (3). Defaults to true. */
+  showCarousel?: boolean;
+  themeColors?: {
+    navy?: string;
+    pink?: string;
+    cream?: string;
+    lav?: string;
+    peri?: string;
+    bg?: string;
+  };
+  className?: string;
+  onBookSelect?: (book: BookCfg | null) => void;
+}
+
+function ChevronLeft() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+function ChevronRight() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 18l6-6-6-6" />
+    </svg>
+  );
+}
+
+const OPEN_BTN_OFF = ['opacity-0', 'scale-[0.94]'];
+const OPEN_BTN_ON = ['opacity-100', 'scale-100'];
+
+const DEMO_BOOKS: BookCfg[] = [
+  {
+    id: "book1",
+    title: "Machine Learning",
+    author: "Cognitive",
+    year: "2024",
+    stars: 5,
+    desc: "A comprehensive guide to understanding machine learning algorithms and their applications in modern software engineering.",
+    spineBg: "#1e1e1e",
+    spineInk: "#ffffff",
+    spineFont: "700 42px Georgia",
+    backBg: "#1e1e1e",
+    backInk: "255,255,255",
+    edge: "#e0d6c8",
+    images: {
+      front: frontCoverMl.src,
+      spine: spineCoverMl.src,
+      back: backCoverMl.src
+    }
+  },
+  {
+    id: "book2",
+    title: "Neural Networks",
+    author: "Cognitive",
+    year: "2024",
+    stars: 5,
+    desc: "Deep dive into the architecture, training, and deployment of neural networks across various domains.",
+    spineBg: "#f0f0f0",
+    spineInk: "#000000",
+    spineFont: "700 42px sans-serif",
+    backBg: "#f0f0f0",
+    backInk: "0,0,0",
+    edge: "#ffffff",
+    images: {
+      front: frontCoverNets.src,
+      spine: spineCoverNets.src,
+      back: backCoverNets.src
+    }
+  }
+];
+
+export function BooksScene({
+  books = DEMO_BOOKS,
+  heroTitle = 'Books',
+  showNav = true,
+  showDetailPanel = true,
+  showCarousel = true,
+  themeColors,
+  className,
+  onBookSelect,
+}: BooksSceneProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const openBtnRef = useRef<HTMLButtonElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const dpRef = useRef<HTMLDivElement | null>(null);
-  const dpTitleRef = useRef<HTMLHeadingElement | null>(null);
-  const dpDescRef = useRef<HTMLParagraphElement | null>(null);
-  const dpStarsRef = useRef<HTMLDivElement | null>(null);
-  const dpYearRef = useRef<HTMLDivElement | null>(null);
+  const shiftCarouselRef = useRef<(dir: 1 | -1) => void>(() => { });
+
+  const onBookSelectRef = useRef(onBookSelect);
+  useEffect(() => {
+    onBookSelectRef.current = onBookSelect;
+  }, [onBookSelect]);
+
+  const [uiMode, setUiMode] = useState<'hero' | 'opening' | 'detail' | 'closing'>('hero');
+  const [selectedCfg, setSelectedCfg] = useState<BookCfg | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  // hero-word entrance: flip to `mounted` one frame after first paint so the
+  // opacity/translate transition below actually has something to animate from.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
   useEffect(() => {
     const root = rootRef.current;
     const canvasEl = canvasRef.current;
-    if (!root || !canvasEl) return;
+    if (!root || !canvasEl || books.length === 0) return;
 
     let cancelled = false;
     const timeouts: ReturnType<typeof setTimeout>[] = [];
@@ -66,9 +169,7 @@ export function BooksScene() {
       return id;
     };
 
-    // ---------------------------------------------------------------------
-    // 0. Small utilities
-    // ---------------------------------------------------------------------
+    // Small utilities
     const RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -135,28 +236,24 @@ export function BooksScene() {
       x.closePath();
     }
 
-    // ---------------------------------------------------------------------
-    // 1. Renderer, scene, camera, lights
-    // ---------------------------------------------------------------------
+    // Renderer, scene, camera, lights
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({
-        canvas: canvasEl,
-        antialias: true,
-        alpha: true,
-      });
-    } catch (e) {
+      renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, alpha: true });
+    } catch (err) {
+      console.warn('BooksShowcase: WebGL renderer creation failed', err);
       const fail = document.createElement('div');
-      fail.className = 'bs-webgl-fail';
-      fail.textContent =
-        'This experience needs WebGL, which your browser blocked or does not support.';
+      fail.className =
+        'absolute inset-0 z-50 flex items-center justify-center p-10 text-center text-lg leading-relaxed text-[var(--bs-lav)]';
+      fail.textContent = 'This experience needs WebGL, which your browser blocked or does not support.';
       root.appendChild(fail);
-      return;
+      return () => {
+        fail.remove();
+      };
     }
 
-    // container-relative sizing: this section does not assume it owns the
-    // whole viewport, so every place the original used innerWidth/innerHeight
-    // now reads from `dims`, refreshed on resize.
+    // container-relative sizing: this is a section, not a full page, so
+    // every place that would use innerWidth/innerHeight reads from `dims`.
     const dims = { w: 0, h: 0 };
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -192,11 +289,11 @@ export function BooksScene() {
       envBlob(x, 140, 66, 95, '255,255,255', 0.95);
       envBlob(x, 405, 84, 55, '255,214,168', 0.55);
       envBlob(x, 256, 150, 120, '255,155,185', 0.28);
-      const tex = new THREE.CanvasTexture(c);
-      tex.mapping = THREE.EquirectangularReflectionMapping;
+      const tx = new THREE.CanvasTexture(c);
+      tx.mapping = THREE.EquirectangularReflectionMapping;
       const pmrem = new THREE.PMREMGenerator(renderer);
-      scene.environment = pmrem.fromEquirectangular(tex).texture;
-      tex.dispose();
+      scene.environment = pmrem.fromEquirectangular(tx).texture;
+      tx.dispose();
       pmrem.dispose();
     })();
 
@@ -225,14 +322,31 @@ export function BooksScene() {
     const bookRoot = new THREE.Group();
     scene.add(bookRoot);
 
-    // ---------------------------------------------------------------------
-    // 2. Shared procedural textures
-    // ---------------------------------------------------------------------
+    // Shared procedural textures
     function tex(c: HTMLCanvasElement) {
       const t = new THREE.CanvasTexture(c);
       t.colorSpace = THREE.SRGBColorSpace;
       t.anisotropy = ANISO;
       return t;
+    }
+
+    // Paint a fallback cover immediately, then swap in `imageURL` once it loads (if given). Keeps the fallback forever if there's no URL, or if the load fails / is CORS-blocked. 
+    function loadOrPaint(material: THREE.MeshStandardMaterial, imageURL: string | null | undefined, paintFallback: () => HTMLCanvasElement) {
+      material.map = tex(paintFallback());
+      material.needsUpdate = true;
+      if (!imageURL) return;
+      new THREE.TextureLoader().setCrossOrigin('anonymous').load(
+        imageURL,
+        (t) => {
+          if (cancelled) return;
+          t.colorSpace = THREE.SRGBColorSpace;
+          t.anisotropy = ANISO;
+          material.map = t;
+          material.needsUpdate = true;
+        },
+        undefined,
+        () => console.warn('Cover image failed to load, kept fallback cover:', imageURL),
+      );
     }
 
     function noiseTexture(base: number, amp: number, scratches: boolean) {
@@ -286,11 +400,7 @@ export function BooksScene() {
         const w = 1 + Math.random() * 2.4,
           tone = Math.random();
         x.fillStyle =
-          tone < 0.12
-            ? 'rgba(140,125,95,.5)'
-            : tone < 0.5
-              ? 'rgba(255,255,252,.55)'
-              : 'rgba(190,178,150,.45)';
+          tone < 0.12 ? 'rgba(140,125,95,.5)' : tone < 0.5 ? 'rgba(255,255,252,.55)' : 'rgba(190,178,150,.45)';
         if (vertical) x.fillRect(p, 0, w, s);
         else x.fillRect(0, p, s, w);
         p += w + 0.6 + Math.random() * 1.6;
@@ -336,390 +446,41 @@ export function BooksScene() {
       return new THREE.CanvasTexture(c);
     })();
 
-    // ---------------------------------------------------------------------
-    // 3. Cover painters + book data
-    // ---------------------------------------------------------------------
-    function paintMoney(x: CanvasRenderingContext2D, w: number, h: number) {
-      const GREEN = '#4cb960',
-        INK = '#0d1117';
-      x.fillStyle = GREEN;
+    // Cover fallbacks (used whenever no image / no custom painter given)
+    function paintDefaultFront(x: CanvasRenderingContext2D, w: number, h: number, o: { title: string; author: string; bg: string }) {
+      x.fillStyle = o.bg;
       x.fillRect(0, 0, w, h);
-      x.fillStyle = INK;
-      x.font = '600 27px Georgia';
-      drawSpaced(x, 'OVER EIGHT MILLION COPIES SOLD', w / 2, 84, 5);
-      x.textAlign = 'center';
-      x.font = '400 96px Georgia';
-      x.fillText('The', w / 2, 190);
-      x.textAlign = 'left';
-      x.font = '700 152px Georgia';
-      drawSpaced(x, 'Psychology', w / 2, 320, 0);
-      x.textAlign = 'center';
-      x.font = '400 96px Georgia';
-      x.fillText('of', w / 2, 425);
+      x.fillStyle = 'rgba(255,255,255,0.06)';
+      for (let i = 0; i < 40; i++) x.fillRect(Math.random() * w, Math.random() * h, 2, 2);
       x.fillStyle = '#ffffff';
-      x.font = '700 190px Georgia';
-      x.fillText('Money', w / 2, 570);
-      x.textAlign = 'left';
-
-      const bcx = w / 2,
-        bcy = 862;
-      for (let side = -1; side <= 1; side += 2) {
-        x.save();
-        x.beginPath();
-        x.ellipse(bcx + side * 118, bcy, 116, 148, side * 0.06, 0, 6.2832);
-        x.clip();
-        x.fillStyle = '#b9bfab';
-        x.fillRect(bcx + side * 118 - 130, bcy - 160, 260, 320);
-        for (let r = 0; r < 9; r++) {
-          const yy = bcy - 132 + r * 34;
-          x.lineCap = 'round';
-          x.strokeStyle = 'rgba(38,44,34,.5)';
-          x.lineWidth = 30;
-          x.beginPath();
-          x.moveTo(bcx + side * 4, yy + 8);
-          x.bezierCurveTo(bcx + side * 96, yy - 24, bcx + side * 168, yy + 30, bcx + side * 250, yy + 12);
-          x.stroke();
-          x.strokeStyle = r % 2 ? '#eceadb' : '#cdd2bd';
-          x.lineWidth = 21;
-          x.beginPath();
-          x.moveTo(bcx + side * 4, yy);
-          x.bezierCurveTo(bcx + side * 96, yy - 32, bcx + side * 168, yy + 22, bcx + side * 250, yy + 4);
-          x.stroke();
-          x.strokeStyle = 'rgba(70,84,62,.45)';
-          x.lineWidth = 2;
-          x.beginPath();
-          x.moveTo(bcx + side * 20, yy - 4);
-          x.bezierCurveTo(bcx + side * 100, yy - 34, bcx + side * 164, yy + 18, bcx + side * 236, yy);
-          x.stroke();
-        }
-        x.restore();
-      }
-      x.fillStyle = GREEN;
-      x.fillRect(bcx - 7, bcy - 156, 14, 312);
-
-      x.fillStyle = '#ffffff';
-      x.beginPath();
-      x.arc(w - 176, 900, 104, 0, 6.2832);
-      x.fill();
       x.textAlign = 'center';
-      x.fillStyle = '#2f9a52';
-      x.font = 'italic 27px Georgia';
-      x.fillText('Special', w - 176, 866);
-      x.fillText('Edition', w - 176, 898);
-      x.fillStyle = INK;
-      x.font = '600 21px Arial';
-      x.fillText('Includes 2', w - 176, 936);
-      x.fillText('Bonus Chapters', w - 176, 962);
-
-      x.textAlign = 'left';
-      x.fillStyle = INK;
-      x.font = '700 40px Arial';
-      drawSpaced(x, 'TIMELESS LESSONS ON WEALTH,', w / 2, 1104, 4);
-      drawSpaced(x, 'GREED, AND HAPPINESS', w / 2, 1158, 4);
-      x.fillStyle = '#ffffff';
-      x.font = '700 66px Arial';
-      drawSpaced(x, 'MORGAN HOUSEL', w / 2, 1272, 10);
-      x.fillStyle = INK;
-      x.textAlign = 'center';
-      x.font = '500 27px Georgia';
-      x.fillText('"Everyone should own a copy."', w / 2, 1364);
-      x.textAlign = 'left';
-      x.font = '700 29px Arial';
-      drawSpaced(x, 'JAMES CLEAR', w / 2, 1404, 5);
-      x.textAlign = 'center';
-      x.font = 'italic 25px Georgia';
-      x.fillText('Bestselling Author of Atomic Habits', w / 2, 1442);
-      x.textAlign = 'left';
-    }
-
-    function paintAlchemist(x: CanvasRenderingContext2D, w: number, h: number) {
-      const RED = '#af2024',
-        ORANGE = '#e8501f',
-        GOLD = '#f2b31c',
-        INK = '#2a1508';
-      x.fillStyle = RED;
-      x.fillRect(0, 0, w, h);
-      x.fillStyle = ORANGE;
-      x.fillRect(38, 38, w - 76, h - 76);
-      x.strokeStyle = GOLD;
-      x.lineWidth = 3;
-      x.strokeRect(20, 20, w - 40, h - 40);
-
-      const cx = w / 2,
-        cy = 700,
-        R = 292;
-      x.save();
-      x.beginPath();
-      x.rect(38, 38, w - 76, h - 76);
-      x.clip();
-
-      for (let i = 0; i < 32; i++) {
-        const a = (i / 32) * 6.2832 + 0.098;
-        x.save();
-        x.translate(cx, cy);
-        x.rotate(a);
-        x.fillStyle = 'rgba(242,179,28,.85)';
-        x.beginPath();
-        x.moveTo(R + 8, -13);
-        x.lineTo(1180, 0);
-        x.lineTo(R + 8, 13);
-        x.closePath();
-        x.fill();
-        for (let d = 0; d < 4; d++) {
-          const rd = R + 120 + d * 190,
-            sz = 20 - d * 2;
-          x.fillStyle = d % 2 ? 'rgba(242,179,28,.95)' : 'rgba(175,32,36,.9)';
-          x.beginPath();
-          x.moveTo(rd, -sz);
-          x.lineTo(rd + sz, 0);
-          x.lineTo(rd, sz);
-          x.lineTo(rd - sz, 0);
-          x.closePath();
-          x.fill();
-        }
-        x.restore();
-      }
-
-      x.fillStyle = '#b8351f';
-      for (let i = 0; i < 30; i++) {
-        const a = (i / 30) * 6.2832;
-        x.beginPath();
-        x.arc(cx + Math.cos(a) * R, cy + Math.sin(a) * R, 34, 0, 6.2832);
-        x.fill();
-      }
-      x.fillStyle = GOLD;
-      x.beginPath();
-      x.arc(cx, cy, R - 4, 0, 6.2832);
-      x.fill();
-      x.strokeStyle = '#b8351f';
-      x.lineWidth = 7;
-      x.beginPath();
-      x.arc(cx, cy, R - 26, 0, 6.2832);
-      x.stroke();
-      x.fillStyle = '#b8351f';
-      for (let i = 0; i < 64; i++) {
-        const a = (i / 64) * 6.2832;
-        x.beginPath();
-        x.arc(cx + Math.cos(a) * (R - 46), cy + Math.sin(a) * (R - 46), 5, 0, 6.2832);
-        x.fill();
-      }
-      x.save();
-      x.beginPath();
-      x.arc(cx, cy, R - 56, 0, 6.2832);
-      x.clip();
-      x.strokeStyle = 'rgba(199,100,0,.55)';
-      x.lineWidth = 4;
-      for (let i = 0; i < 5; i++) {
-        const yy = cy - 150 + i * 78;
-        x.beginPath();
-        x.moveTo(cx - 240, yy);
-        x.bezierCurveTo(cx - 90, yy - 34, cx + 80, yy + 34, cx + 240, yy - 6);
-        x.stroke();
-      }
-      x.restore();
-      x.restore();
-
-      x.fillStyle = INK;
-      x.textAlign = 'center';
-      x.font = 'italic 74px Georgia';
-      x.fillText('The', cx, 638);
-      x.textAlign = 'left';
-      x.font = '700 78px Georgia';
-      drawSpaced(x, 'ALCHEMIST', cx, 748, 3);
-      x.textAlign = 'center';
-      x.fillStyle = '#8f2a12';
+      x.font = '700 76px Georgia';
+      const words = o.title.split(' ');
+      let line = '';
+      const lines: string[] = [];
+      words.forEach((word) => {
+        const test = line ? line + ' ' + word : word;
+        if (x.measureText(test).width > w * 0.8 && line) {
+          lines.push(line);
+          line = word;
+        } else line = test;
+      });
+      if (line) lines.push(line);
+      const startY = h * 0.42 - ((lines.length - 1) * 88) / 2;
+      lines.forEach((l, i) => x.fillText(l, w / 2, startY + i * 88));
+      x.globalAlpha = 0.85;
       x.font = 'italic 40px Georgia';
-      x.fillText('25th', cx, 826);
-      x.textAlign = 'left';
-      x.font = '600 20px Arial';
-      drawSpaced(x, 'ANNIVERSARY', cx, 862, 6);
-      drawSpaced(x, 'EDITION', cx, 890, 6);
-
-      x.fillStyle = INK;
-      x.font = '700 66px Georgia';
-      drawSpaced(x, 'PAULO COELHO', cx, 1382, 4);
-      x.fillStyle = 'rgba(242,179,28,.9)';
-      [
-        [140, 1400],
-        [w - 140, 1400],
-      ].forEach(([px, py]) => {
-        x.beginPath();
-        x.moveTo(px, py - 62);
-        x.lineTo(px + 58, py);
-        x.lineTo(px - 58, py);
-        x.closePath();
-        x.fill();
-      });
-      [
-        [128, 118],
-        [w - 128, 118],
-      ].forEach(([px, py]) => {
-        x.beginPath();
-        x.moveTo(px - 46, py);
-        x.quadraticCurveTo(px - 14, py - 30, px, py + 6);
-        x.quadraticCurveTo(px + 14, py - 30, px + 46, py);
-        x.quadraticCurveTo(px + 12, py + 4, px, py + 30);
-        x.quadraticCurveTo(px - 12, py + 4, px - 46, py);
-        x.closePath();
-        x.fill();
-      });
+      x.fillText(o.author, w / 2, startY + lines.length * 88 + 60);
+      x.globalAlpha = 1;
+      x.strokeStyle = 'rgba(255,255,255,0.4)';
+      x.lineWidth = 3;
+      x.strokeRect(60, 60, w - 120, h - 120);
     }
 
-    function paintBornACrime(x: CanvasRenderingContext2D, w: number, h: number) {
-      const TEAL = '#07b1cb',
-        YELLOW = '#f6e400';
-      x.fillStyle = TEAL;
+    function paintBack(x: CanvasRenderingContext2D, w: number, h: number, o: { backBg: string; backInk: string }) {
+      x.fillStyle = o.backBg;
       x.fillRect(0, 0, w, h);
-      for (let i = 0; i < 90; i++) {
-        const px = (((i * 977) % 1000) / 1000) * w,
-          py = (((i * 613) % 1000) / 1000) * h,
-          rw = 14 + ((i * 37) % 70),
-          rh = 10 + ((i * 53) % 58);
-        x.fillStyle =
-          i % 3 === 0 ? 'rgba(214,206,190,.55)' : i % 3 === 1 ? 'rgba(6,132,152,.5)' : 'rgba(160,196,196,.32)';
-        x.beginPath();
-        x.ellipse(px, py, rw / 2, rh / 2, i, 0, 6.2832);
-        x.fill();
-      }
-
-      const fx = w / 2 - 30,
-        fy = 520,
-        SKIN = '#c98b5c',
-        SHADE = '#a96c42';
-      x.fillStyle = '#22262a';
-      x.beginPath();
-      x.moveTo(fx - 330, h);
-      x.quadraticCurveTo(fx - 250, fy + 250, fx, fy + 250);
-      x.quadraticCurveTo(fx + 250, fy + 250, fx + 320, h);
-      x.closePath();
-      x.fill();
-      x.strokeStyle = SHADE;
-      x.lineWidth = 78;
-      x.lineCap = 'round';
-      x.beginPath();
-      x.moveTo(fx - 320, fy + 190);
-      x.quadraticCurveTo(fx - 350, fy - 130, fx - 150, fy - 246);
-      x.stroke();
-      x.fillStyle = SKIN;
-      x.beginPath();
-      x.ellipse(fx, fy, 196, 244, 0.03, 0, 6.2832);
-      x.fill();
-      x.fillStyle = SHADE;
-      x.beginPath();
-      x.ellipse(fx - 150, fy + 40, 62, 148, 0.16, 0, 6.2832);
-      x.fill();
-      x.beginPath();
-      x.ellipse(fx + 190, fy + 10, 30, 56, 0, 0, 6.2832);
-      x.fill();
-      x.fillStyle = '#2b2119';
-      x.beginPath();
-      x.ellipse(fx, fy - 186, 190, 96, 0, Math.PI, 6.2832);
-      x.fill();
-      x.fillStyle = SKIN;
-      x.beginPath();
-      x.ellipse(fx - 96, fy - 228, 104, 52, -0.22, 0, 6.2832);
-      x.fill();
-      for (let i = 0; i < 4; i++) {
-        x.strokeStyle = 'rgba(120,74,42,.5)';
-        x.lineWidth = 4;
-        x.beginPath();
-        x.moveTo(fx - 176 + i * 46, fy - 258);
-        x.lineTo(fx - 162 + i * 46, fy - 196);
-        x.stroke();
-      }
-      x.strokeStyle = '#2b1d12';
-      x.lineWidth = 15;
-      x.lineCap = 'round';
-      x.beginPath();
-      x.moveTo(fx - 116, fy - 96);
-      x.quadraticCurveTo(fx - 76, fy - 116, fx - 38, fy - 94);
-      x.moveTo(fx + 40, fy - 100);
-      x.quadraticCurveTo(fx + 80, fy - 120, fx + 116, fy - 98);
-      x.stroke();
-      x.fillStyle = '#f3e7d8';
-      [
-        [fx - 78, fy - 48],
-        [fx + 78, fy - 52],
-      ].forEach(([ex, ey]) => {
-        x.beginPath();
-        x.ellipse(ex, ey, 42, 20, 0, 0, 6.2832);
-        x.fill();
-      });
-      x.fillStyle = '#3a2415';
-      [
-        [fx - 74, fy - 48],
-        [fx + 82, fy - 52],
-      ].forEach(([ex, ey]) => {
-        x.beginPath();
-        x.arc(ex, ey, 17, 0, 6.2832);
-        x.fill();
-      });
-      x.strokeStyle = 'rgba(120,74,42,.65)';
-      x.lineWidth = 9;
-      x.beginPath();
-      x.moveTo(fx + 6, fy - 30);
-      x.quadraticCurveTo(fx + 16, fy + 46, fx - 22, fy + 62);
-      x.stroke();
-      x.fillStyle = '#ffffff';
-      x.beginPath();
-      x.moveTo(fx - 96, fy + 122);
-      x.quadraticCurveTo(fx - 4, fy + 100, fx + 92, fy + 118);
-      x.quadraticCurveTo(fx - 2, fy + 204, fx - 96, fy + 122);
-      x.fill();
-      x.strokeStyle = 'rgba(90,52,30,.55)';
-      x.lineWidth = 5;
-      x.stroke();
-
-      x.fillStyle = '#ffffff';
-      x.font = '700 36px Arial';
-      drawSpaced(x, 'THE MILLION-SELLING MUST-READ MEMOIR', w / 2, 82, 2);
-      x.fillStyle = YELLOW;
-      x.font = '700 34px Arial';
-      x.textAlign = 'left';
-      x.fillText("'POWERFUL", 700, 196);
-      x.fillText('AND UNIQUE\'', 700, 236);
-      x.fillStyle = '#ffffff';
-      x.font = 'italic 30px Georgia';
-      x.fillText('The Times', 700, 276);
-      x.font = '700 34px Arial';
-      x.fillText("'ESSENTIAL'", 84, 926);
-      x.font = 'italic 30px Georgia';
-      x.fillText('Guardian', 84, 966);
-
-      x.fillStyle = '#ffffff';
-      x.font = '700 168px Arial';
-      drawSpaced(x, 'TREVOR', w / 2, 1116, 8);
-      drawSpaced(x, 'NOAH', w / 2, 1268, 8);
-      x.fillStyle = YELLOW;
-      x.font = '700 116px Arial';
-      drawSpaced(x, 'BORN A CRIME', w / 2, 1386, 4);
-      x.fillStyle = '#ffffff';
-      x.font = '700 34px Arial';
-      drawSpaced(x, 'STORIES FROM A SOUTH AFRICAN CHILDHOOD', w / 2, 1462, 1);
-    }
-
-    type BookCfg = {
-      id: string;
-      title: string;
-      author: string;
-      year: string;
-      stars: number;
-      desc: string;
-      front: (x: CanvasRenderingContext2D, w: number, h: number) => void;
-      edge: string;
-      backBg: string;
-      backInk: string;
-      spineBg: string;
-      spineInk: string;
-      spineFont: string;
-      chapters: string[];
-      coverURL: string | null;
-    };
-
-    function paintBack(x: CanvasRenderingContext2D, w: number, h: number, cfg: BookCfg) {
-      x.fillStyle = cfg.backBg;
-      x.fillRect(0, 0, w, h);
-      const ink = cfg.backInk;
+      const ink = o.backInk;
       x.fillStyle = 'rgba(' + ink + ',.5)';
       rr(x, 150, 190, w - 460, 28, 14);
       x.fill();
@@ -749,21 +510,26 @@ export function BooksScene() {
       x.textAlign = 'left';
     }
 
-    function paintSpine(x: CanvasRenderingContext2D, w: number, h: number, cfg: BookCfg) {
-      x.fillStyle = cfg.spineBg;
+    function paintSpine(
+      x: CanvasRenderingContext2D,
+      w: number,
+      h: number,
+      o: { spineBg: string; spineInk: string; spineFont: string; title: string; author: string },
+    ) {
+      x.fillStyle = o.spineBg;
       x.fillRect(0, 0, w, h);
       x.save();
       x.translate(w / 2, h / 2);
       x.rotate(Math.PI / 2);
-      x.fillStyle = cfg.spineInk;
-      x.font = cfg.spineFont;
-      drawSpaced(x, cfg.title.toUpperCase(), -h * 0.1, 15, 6);
+      x.fillStyle = o.spineInk;
+      x.font = o.spineFont;
+      drawSpaced(x, o.title.toUpperCase(), -h * 0.1, 15, 6);
       x.globalAlpha = 0.85;
       x.font = '600 25px Arial';
-      drawSpaced(x, cfg.author.toUpperCase(), h * 0.325, 9, 4);
+      drawSpaced(x, o.author.toUpperCase(), h * 0.325, 9, 4);
       x.globalAlpha = 1;
       x.restore();
-      x.fillStyle = cfg.spineInk;
+      x.fillStyle = o.spineInk;
       x.globalAlpha = 0.6;
       x.fillRect(w / 2 - 26, 92, 52, 3);
       x.fillRect(w / 2 - 26, h - 95, 52, 3);
@@ -777,19 +543,15 @@ export function BooksScene() {
       return t + '...';
     }
 
-    function makeIndexPageTex(cfg: BookCfg) {
+    function makeIndexPageTex(chapters?: string[]) {
       const w = 1024,
         h = 1536,
         c = mkCanvas(w, h),
         x = c.getContext('2d')!;
       x.fillStyle = '#f4efdf';
       x.fillRect(0, 0, w, h);
-
       x.fillStyle = 'rgba(130,110,80,0.07)';
-      for (let i = 0; i < 1600; i++) {
-        x.fillRect(Math.random() * w, Math.random() * h, 1.1, 1.1);
-      }
-
+      for (let i = 0; i < 1600; i++) x.fillRect(Math.random() * w, Math.random() * h, 1.1, 1.1);
       x.fillStyle = '#2f2a23';
       x.textAlign = 'center';
       x.font = '700 84px Georgia';
@@ -798,21 +560,16 @@ export function BooksScene() {
       x.fillRect(220, 225, w - 440, 3);
       x.globalAlpha = 1;
 
-      const chapters = cfg.chapters || [
-        'Introduction',
-        'Main Ideas',
-        'Practical Lessons',
-        'Case Studies',
-        'Takeaways',
-        'Final Notes',
-      ];
+      const list = chapters && chapters.length
+        ? chapters
+        : ['Introduction', 'Main Ideas', 'Practical Lessons', 'Case Studies', 'Takeaways', 'Final Notes'];
       x.textAlign = 'left';
       x.font = '500 46px Georgia';
       let y = 318;
-      for (let i = 0; i < chapters.length; i++) {
+      for (let i = 0; i < list.length; i++) {
         const n = String(i + 1).padStart(2, '0');
         const pageNo = String(7 + i * 14).padStart(3, ' ');
-        const left = n + '. ' + trimToWidth(x, chapters[i], 650);
+        const left = n + '. ' + trimToWidth(x, list[i], 650);
         x.fillStyle = '#2f2a23';
         x.fillText(left, 150, y);
         x.textAlign = 'right';
@@ -827,77 +584,10 @@ export function BooksScene() {
       return tex(c);
     }
 
-    const BOOKS: BookCfg[] = [
-      {
-        id: 'money',
-        title: 'The Psychology of Money',
-        author: 'Morgan Housel',
-        year: '2020',
-        stars: 4,
-        desc: 'The Psychology of Money is a set of nineteen short stories about how people actually behave around wealth, greed, risk, and happiness. Morgan Housel makes the case that doing well with money depends far less on intelligence than on temperament, patience, and the stories we tell ourselves.',
-        front: paintMoney,
-        edge: '#e4ead9',
-        backBg: '#4cb960',
-        backInk: '13,17,23',
-        spineBg: '#4cb960',
-        spineInk: '#ffffff',
-        spineFont: '700 42px Georgia',
-        chapters: [
-          "No One's Crazy",
-          'Luck and Risk',
-          'Never Enough',
-          'Confounding Compounding',
-          'Tails, You Win',
-          'Reasonable Over Rational',
-        ],
-        coverURL: '/covers/psychology-of-money.jpg',
-      },
-      {
-        id: 'alchemist',
-        title: 'The Alchemist',
-        author: 'Paulo Coelho',
-        year: '1988',
-        stars: 4,
-        desc: 'The Alchemist follows Santiago, an Andalusian shepherd boy who leaves his flock to chase a recurring dream of treasure in the Egyptian pyramids. Paulo Coelho turns the journey into a fable about listening to your heart, reading the omens along the way, and the price of abandoning your own Personal Legend.',
-        front: paintAlchemist,
-        edge: '#e9dcbc',
-        backBg: '#af2024',
-        backInk: '252,232,196',
-        spineBg: '#af2024',
-        spineInk: '#f2b31c',
-        spineFont: '700 44px Georgia',
-        chapters: [
-          'The Boy and His Dream',
-          "Melchizedek's Gift",
-          'Learning the Desert',
-          'The Language of Omens',
-          'The Alchemist',
-          'The Treasure Revealed',
-        ],
-        coverURL: 'https://m.media-amazon.com/images/I/81ioPZFMeUL._UF1000,1000_QL80_.jpg',
-      },
-      {
-        id: 'borncrime',
-        title: 'Born a Crime',
-        author: 'Trevor Noah',
-        year: '2016',
-        stars: 4,
-        desc: "Born a Crime is Trevor Noah's memoir of growing up mixed-race in apartheid South Africa, where his very existence was illegal. Eighteen stories move between poverty, violence, and absurd comedy, held together by his mother's fierce, funny, unbreakable love.",
-        front: paintBornACrime,
-        edge: '#dce9e6',
-        backBg: '#07b1cb',
-        backInk: '255,255,255',
-        spineBg: '#07b1cb',
-        spineInk: '#f6e400',
-        spineFont: '700 44px Arial',
-        chapters: ['Run', 'Trevor, Pray', 'Chameleon', 'The Second Girl', 'Go Hitler!', "My Mother's Life"],
-        coverURL: 'https://m.media-amazon.com/images/I/81fh8hPklHL._AC_UF1000,1000_QL80_.jpg',
-      },
-    ];
+    // Book construction
+    const N = books.length;
+    const VISIBLE = Math.min(3, N);
 
-    // ---------------------------------------------------------------------
-    // 4. Book construction
-    // ---------------------------------------------------------------------
     const W = 1.42,
       H = 2.14,
       T = 0.34,
@@ -959,7 +649,7 @@ export function BooksScene() {
       exit: { segs: any[]; i: number; t: number } | null;
     };
 
-    const books: Book[] = [];
+    const bookInstances: Book[] = [];
     const hitMeshes: THREE.Mesh[] = [];
 
     function buildBook(cfg: BookCfg, index: number): Book {
@@ -968,41 +658,42 @@ export function BooksScene() {
       root.add(float);
       bookRoot.add(root);
 
-      const fc = mkCanvas(1024, 1536);
-      cfg.front(fc.getContext('2d')!, 1024, 1536);
-      const bc = mkCanvas(1024, 1536);
-      paintBack(bc.getContext('2d')!, 1024, 1536, cfg);
-      const sc = mkCanvas(220, 1536);
-      paintSpine(sc.getContext('2d')!, 220, 1536, cfg);
-      const frontTex = tex(fc),
-        backTex = tex(bc),
-        spineTex = tex(sc);
-      const indexPageMat = std({
-        map: makeIndexPageTex(cfg),
-        roughness: 0.92,
-        envMapIntensity: 0.2,
-        side: THREE.DoubleSide,
+      const indexPageMat = std({ map: makeIndexPageTex(cfg.chapters), roughness: 0.92, envMapIntensity: 0.2, side: THREE.DoubleSide });
+
+      const edgeColor = cfg.edge ?? '#eee4cf';
+      const mEdge = std({ color: edgeColor, bumpMap: laminateBump, bumpScale: 0.0035, roughness: 0.68, envMapIntensity: 0.3 });
+      const mFront = std({ bumpMap: laminateBump, bumpScale: 0.0035, roughness: 0.54, envMapIntensity: 0.28 });
+      const mBack = std({ bumpMap: laminateBump, bumpScale: 0.0035, roughness: 0.58, envMapIntensity: 0.26 });
+      const mSpine = std({ bumpMap: clothBump, bumpScale: 0.006, roughness: 0.78, envMapIntensity: 0.22 });
+
+      loadOrPaint(mFront, cfg.images?.front ?? cfg.coverURL ?? null, () => {
+        const c = mkCanvas(1024, 1536);
+        const ctx = c.getContext('2d')!;
+        if (cfg.front) cfg.front(ctx, 1024, 1536);
+        else paintDefaultFront(ctx, 1024, 1536, { title: cfg.title, author: cfg.author, bg: cfg.spineBg ?? cfg.backBg ?? '#22252b' });
+        return c;
       });
-
-      const mEdge = std({ color: cfg.edge, bumpMap: laminateBump, bumpScale: 0.0035, roughness: 0.68, envMapIntensity: 0.3 });
-      const mFront = std({ map: frontTex, bumpMap: laminateBump, bumpScale: 0.0035, roughness: 0.54, envMapIntensity: 0.28 });
-      const mBack = std({ map: backTex, bumpMap: laminateBump, bumpScale: 0.0035, roughness: 0.58, envMapIntensity: 0.26 });
-      const mSpine = std({ map: spineTex, bumpMap: clothBump, bumpScale: 0.006, roughness: 0.78, envMapIntensity: 0.22 });
-
-      if (cfg.coverURL) {
-        new THREE.TextureLoader().setCrossOrigin('anonymous').load(
-          cfg.coverURL,
-          (t) => {
-            if (cancelled) return;
-            t.colorSpace = THREE.SRGBColorSpace;
-            t.anisotropy = ANISO;
-            mFront.map = t;
-            mFront.needsUpdate = true;
-          },
-          undefined,
-          () => console.warn('Cover blocked by CORS, procedural kept:', cfg.title),
-        );
-      }
+      loadOrPaint(mBack, cfg.images?.back ?? null, () => {
+        const c = mkCanvas(1024, 1536);
+        const ctx = c.getContext('2d')!;
+        if (cfg.back) cfg.back(ctx, 1024, 1536);
+        else paintBack(ctx, 1024, 1536, { backBg: cfg.backBg ?? '#22252b', backInk: cfg.backInk ?? '255,255,255' });
+        return c;
+      });
+      loadOrPaint(mSpine, cfg.images?.spine ?? null, () => {
+        const c = mkCanvas(220, 1536);
+        const ctx = c.getContext('2d')!;
+        if (cfg.spine) cfg.spine(ctx, 220, 1536);
+        else
+          paintSpine(ctx, 220, 1536, {
+            spineBg: cfg.spineBg ?? cfg.backBg ?? '#22252b',
+            spineInk: cfg.spineInk ?? '#ffffff',
+            spineFont: cfg.spineFont ?? '700 42px Georgia',
+            title: cfg.title,
+            author: cfg.author,
+          });
+        return c;
+      });
 
       const backPivot = new THREE.Group();
       backPivot.position.set(-W / 2, 0, BPIVOT_Z);
@@ -1069,7 +760,6 @@ export function BooksScene() {
 
       const hit = new THREE.Mesh(hitGeo, hitMat);
       float.add(hit);
-      hitMeshes.push(hit);
 
       const springs: Record<string, Spring> = {
         px: new Spring(0, 17, 6.8),
@@ -1114,15 +804,13 @@ export function BooksScene() {
         orbXs: new Spring(0, 60, 12),
         exit: null,
       };
-      books.push(b);
+      bookInstances.push(b);
       return b;
     }
-    BOOKS.forEach(buildBook);
-    const bookByHit = (m: THREE.Object3D) => books.find((b) => b.hit === m)!;
+    books.forEach(buildBook);
+    const bookByHit = (m: THREE.Object3D) => bookInstances.find((b) => b.hit === m)!;
 
-    // ---------------------------------------------------------------------
-    // 5. Floating leaves (detail view)
-    // ---------------------------------------------------------------------
+    // Floating leaves (detail view)
     const leaves = {
       items: [] as any[],
       anchor: null as Book | null,
@@ -1195,11 +883,9 @@ export function BooksScene() {
       }
     })();
 
-    // ---------------------------------------------------------------------
-    // 6. Layout slots + state machine
-    // ---------------------------------------------------------------------
+    // Layout slots, state machine, carousel
     const state: {
-      mode: string;
+      mode: 'hero' | 'opening' | 'detail' | 'closing';
       selected: Book | null;
       hovered: Book | null;
       pillLock: Book | null;
@@ -1218,15 +904,15 @@ export function BooksScene() {
 
       SLOTS.hero = SLOTS.portrait
         ? [
-            { p: [-1.36, -1.0, -0.12], r: [-0.045, 0.4, 0.185], s: 1.39 },
-            { p: [0.2, -0.45, 0.6], r: [-0.05, -0.1, -0.035], s: 1.52 },
-            { p: [1.62, -1.1, -0.34], r: [-0.045, -0.42, -0.17], s: 1.39 },
-          ]
+          { p: [-1.36, -1.0, -0.12], r: [-0.045, 0.4, 0.185], s: 1.39 },
+          { p: [0.2, -0.45, 0.6], r: [-0.05, -0.1, -0.035], s: 1.52 },
+          { p: [1.62, -1.1, -0.34], r: [-0.045, -0.42, -0.17], s: 1.39 },
+        ]
         : [
-            { p: [-2.06, -1.23, -0.12], r: [-0.045, 0.4, 0.185], s: 1.39 },
-            { p: [0.3, -1.08, 0.6], r: [-0.05, -0.1, -0.035], s: 1.52 },
-            { p: [2.45, -1.41, -0.34], r: [-0.045, -0.42, -0.17], s: 1.39 },
-          ];
+          { p: [-2.06, -1.23, -0.12], r: [-0.045, 0.4, 0.185], s: 1.39 },
+          { p: [0.3, -1.08, 0.6], r: [-0.05, -0.1, -0.035], s: 1.52 },
+          { p: [2.45, -1.41, -0.34], r: [-0.045, -0.42, -0.17], s: 1.39 },
+        ];
 
       if (SLOTS.portrait) {
         const el = dpRef.current;
@@ -1266,14 +952,12 @@ export function BooksScene() {
       outQuint: (t: number) => 1 - Math.pow(1 - t, 5),
       inOutSine: (t: number) => -(Math.cos(Math.PI * t) - 1) / 2,
     };
-
     const LIFT = 0.38,
       CLEAR = 4.2;
 
     function playY(b: Book, segs: any[]) {
       b.exit = { segs, i: 0, t: 0 };
     }
-
     function stepY(b: Book, dt: number) {
       const ex = b.exit!,
         s = b.springs;
@@ -1290,7 +974,6 @@ export function BooksScene() {
       s.py.t = s.py.v;
       s.py.vel = 0;
     }
-
     function pinInPlace(b: Book) {
       const s = b.springs;
       s.px.t = s.px.v;
@@ -1299,7 +982,6 @@ export function BooksScene() {
       s.ry.t = s.ry.v;
       s.rz.t = s.rz.v;
     }
-
     function sendOut(b: Book, i: number, delay: number) {
       const y0 = SLOTS.hero[i].p[1],
         here = b.springs.py.v,
@@ -1309,18 +991,9 @@ export function BooksScene() {
       playY(b, [
         { d: delay, from: here, to: here, ease: EASE.hold },
         { d: 0.28, from: here, to: apex, ease: EASE.outQuad },
-        {
-          d: 0.9,
-          from: apex,
-          to: y0 - CLEAR,
-          ease: EASE.inOutSine,
-          end: () => {
-            b.root.visible = false;
-          },
-        },
+        { d: 0.9, from: apex, to: y0 - CLEAR, ease: EASE.inOutSine, end: () => { b.root.visible = false; } },
       ]);
     }
-
     function bringBack(b: Book, i: number, delay: number) {
       const here = b.springs.py.v;
       b.root.visible = true;
@@ -1331,13 +1004,75 @@ export function BooksScene() {
       ]);
     }
 
+    // carousel: which VISIBLE-sized window of `bookInstances` sits in the 3 hero slots 
+    function windowIndices(start: number, total: number, count: number) {
+      const arr: number[] = [];
+      for (let i = 0; i < count; i++) arr.push((start + i) % total);
+      return arr;
+    }
+    let carouselStart = 0;
+    let currentWindow: number[] = windowIndices(0, N, VISIBLE);
+    let carouselBusy = false;
+
+    function rebuildHitMeshes() {
+      hitMeshes.length = 0;
+      currentWindow.forEach((bi) => hitMeshes.push(bookInstances[bi].hit));
+    }
+
     function applyMode() {
       if (state.mode === 'hero' || state.mode === 'closing') {
-        books.forEach((b, i) => setTargets(b, SLOTS.hero[i]));
+        currentWindow.forEach((bi, i) => {
+          const slot = SLOTS.hero[i];
+          if (slot) setTargets(bookInstances[bi], slot);
+        });
       } else if (state.selected) {
         setTargets(state.selected, SLOTS.detail!);
       }
     }
+
+    function shiftCarousel(dir: 1 | -1) {
+      if (carouselBusy || state.mode !== 'hero' || N <= VISIBLE) return;
+      carouselBusy = true;
+      const outgoing = currentWindow;
+      // Shift by 1 instead of shifting the entire visible window
+      carouselStart = (((carouselStart + dir) % N) + N) % N;
+      const incoming = windowIndices(carouselStart, N, VISIBLE);
+
+      const toHide = outgoing.filter((bi) => !incoming.includes(bi));
+
+      // Only push away the books that are actually leaving the screen
+      toHide.forEach((bi) => {
+        const oldIdx = outgoing.indexOf(bi);
+        const slot = SLOTS.hero[oldIdx];
+        const b = bookInstances[bi];
+        if (slot) b.springs.px.t = slot.p[0] - dir * 6.5;
+      });
+      setT(() => toHide.forEach((bi) => { bookInstances[bi].root.visible = false; }), 650);
+
+      incoming.forEach((bi, i) => {
+        const slot = SLOTS.hero[i];
+        if (!slot) return;
+        const b = bookInstances[bi];
+        const alreadyOnScreen = outgoing.includes(bi);
+        b.root.visible = true;
+        if (!alreadyOnScreen) {
+          // New books fly in from the opposite side
+          b.springs.px.set(slot.p[0] + dir * 6.5);
+          b.springs.py.set(slot.p[1]);
+          b.springs.pz.set(slot.p[2]);
+          b.springs.rx.set(slot.r[0]);
+          b.springs.ry.set(slot.r[1]);
+          b.springs.rz.set(slot.r[2]);
+          b.springs.sc.set(slot.s * 0.92);
+        }
+        setTargets(b, slot);
+      });
+
+      currentWindow = incoming;
+      rebuildHitMeshes();
+      setT(() => { carouselBusy = false; }, 700);
+    }
+    shiftCarouselRef.current = shiftCarousel;
 
     const camX = new Spring(0, 13, 6.5),
       camY = new Spring(0.1, 13, 6.5),
@@ -1361,39 +1096,42 @@ export function BooksScene() {
       }
     }
 
-    function populatePanel(cfg: BookCfg) {
-      if (dpTitleRef.current) dpTitleRef.current.textContent = cfg.title;
-      if (dpDescRef.current) dpDescRef.current.textContent = cfg.desc;
-      if (dpYearRef.current) dpYearRef.current.textContent = cfg.year;
-      const STAR =
-        '<svg viewBox="0 0 24 24" class="CLS"><path d="M12 2.6l2.8 6 6.6.6-5 4.4 1.5 6.5L12 16.7 6.1 20.1l1.5-6.5-5-4.4 6.6-.6z"/></svg>';
-      let s = '';
-      for (let i = 0; i < 5; i++) s += STAR.replace('CLS', i < cfg.stars ? '' : 'dim');
-      if (dpStarsRef.current) dpStarsRef.current.innerHTML = s;
-    }
-
     const pillX = new Spring(0, 190, 23),
       pillY = new Spring(0, 190, 23);
     let pillOn = false;
+    function showPill() {
+      const el = openBtnRef.current;
+      if (!el) return;
+      el.classList.remove(...OPEN_BTN_OFF);
+      el.classList.add(...OPEN_BTN_ON);
+      pillOn = true;
+    }
     function hidePill() {
-      openBtnRef.current?.classList.remove('on');
+      const el = openBtnRef.current;
+      if (el) {
+        el.classList.remove(...OPEN_BTN_ON);
+        el.classList.add(...OPEN_BTN_OFF);
+      }
       pillOn = false;
     }
 
     function open(book: Book | null) {
       if (state.mode !== 'hero' || !book) return;
       state.mode = 'opening';
+      setUiMode('opening');
       state.selected = book;
       state.pillLock = null;
       state.kbIndex = -1;
       hidePill();
       book.exit = null;
-      root!.classList.add('transit');
-      populatePanel(book.cfg);
+      root!.classList.add('bs-transit');
+      setSelectedCfg(book.cfg);
+      onBookSelectRef.current?.(book.cfg);
       computeSlots();
 
       let out = 0;
-      books.forEach((b, i) => {
+      currentWindow.forEach((bi, i) => {
+        const b = bookInstances[bi];
         if (b !== book) sendOut(b, i, out++ * 0.08);
       });
 
@@ -1410,8 +1148,9 @@ export function BooksScene() {
       setT(() => leaves.activate(book), 1000);
       setT(() => {
         if (state.mode === 'opening') {
-          root!.classList.add('detail-open');
+          root!.classList.add('bs-detail-open');
           state.mode = 'detail';
+          setUiMode('detail');
         }
       }, 1400);
     }
@@ -1419,7 +1158,9 @@ export function BooksScene() {
     function close() {
       if (state.mode !== 'detail') return;
       state.mode = 'closing';
-      root!.classList.remove('detail-open');
+      setUiMode('closing');
+      root!.classList.remove('bs-detail-open');
+      onBookSelectRef.current?.(null);
       leaves.deactivate();
       orbit.drag = false;
       const b = state.selected;
@@ -1430,18 +1171,21 @@ export function BooksScene() {
         b.orbXs.t = 0;
       }
       setT(() => {
-        root!.classList.remove('transit');
+        root!.classList.remove('bs-transit');
         applyMode();
         camTo('hero');
         let back = 0;
-        books.forEach((bk, i) => {
+        currentWindow.forEach((bi, i) => {
+          const bk = bookInstances[bi];
           if (bk !== b) bringBack(bk, i, 0.85 + back++ * 0.1);
         });
       }, 250);
       setT(() => {
         if (state.mode === 'closing') {
           state.mode = 'hero';
+          setUiMode('hero');
           state.selected = null;
+          setSelectedCfg(null);
         }
       }, 1600);
     }
@@ -1449,9 +1193,7 @@ export function BooksScene() {
     const onCloseClick = () => close();
     closeBtnRef.current?.addEventListener('click', onCloseClick);
 
-    // ---------------------------------------------------------------------
-    // 7. Input: pointer as hand, drag to peel, keyboard
-    // ---------------------------------------------------------------------
+    // Input: pointer as hand, drag to peel, keyboard
     const ptr = {
       ndcX: 0,
       ndcY: 0,
@@ -1588,14 +1330,18 @@ export function BooksScene() {
       if (e.key === 'Escape') close();
       if (state.mode !== 'hero') return;
       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-        const d = e.key === 'ArrowRight' ? 1 : -1;
-        state.kbIndex = ((state.kbIndex < 0 ? (d > 0 ? -1 : 1) : state.kbIndex) + d + 3) % 3;
-        state.pillLock = null;
+        if (e.shiftKey) {
+          shiftCarousel(e.key === 'ArrowRight' ? 1 : -1);
+        } else {
+          const d = e.key === 'ArrowRight' ? 1 : -1;
+          state.kbIndex = ((state.kbIndex < 0 ? (d > 0 ? -1 : 1) : state.kbIndex) + d + VISIBLE) % VISIBLE;
+          state.pillLock = null;
+        }
         e.preventDefault();
       }
       if (e.key === 'Enter' && state.hovered) open(state.hovered);
     };
-    window.addEventListener('keydown', onKeydown);
+    root.addEventListener('keydown', onKeydown);
 
     function castRay() {
       ray.setFromCamera({ x: ptr.ndcX, y: ptr.ndcY } as THREE.Vector2, camera);
@@ -1609,9 +1355,7 @@ export function BooksScene() {
       }
     }
 
-    // ---------------------------------------------------------------------
-    // 8. Frame loop
-    // ---------------------------------------------------------------------
+    // Frame loop
     const clock = new THREE.Clock();
     const idle = RM ? 0 : 1;
     const DETAIL_OPEN_ANGLE = 1.18;
@@ -1642,9 +1386,8 @@ export function BooksScene() {
         } else {
           b.orbXs.t = 0;
           if (b.orbPhase === 'drag') {
-            if (Math.abs(b.orbYv) > 0.6) {
-              b.orbPhase = 'spin';
-            } else {
+            if (Math.abs(b.orbYv) > 0.6) b.orbPhase = 'spin';
+            else {
               b.orbPhase = 'return';
               b.orbTarget = Math.round((b.orbY + b.orbYv * 1.2) / Math.PI) * Math.PI;
             }
@@ -1677,9 +1420,7 @@ export function BooksScene() {
       const fan = orbitActive ? clamp(b.orbYv * 0.16, 0, 0.75) : 0;
       const fanB = orbitActive ? clamp(-b.orbYv * 0.16, 0, 0.75) : 0;
       let coverBBase = 0;
-      if (inDetail) {
-        coverBBase = 0.2 + Math.sin(t * 0.8 + b.phase + 1.7) * 0.02 * idle;
-      }
+      if (inDetail) coverBBase = 0.2 + Math.sin(t * 0.8 + b.phase + 1.7) * 0.02 * idle;
 
       if (isHov && ptr.seen && state.mode === 'hero') {
         const dxN = (ptr.cx - b.scr.x) / (dims.w * 0.25);
@@ -1748,7 +1489,8 @@ export function BooksScene() {
       if (ptr.seen && (ptr.type === 'mouse' || ptr.down)) castRay();
       let hov: Book | null = null;
       if (state.mode === 'hero') {
-        hov = rayBook || state.pillLock || (state.kbIndex >= 0 ? books[state.kbIndex] : null);
+        const kb = state.kbIndex >= 0 ? bookInstances[currentWindow[state.kbIndex]] : null;
+        hov = rayBook || state.pillLock || kb || null;
       } else if (state.mode === 'detail') {
         hov = rayBook === state.selected ? rayBook : null;
       }
@@ -1761,8 +1503,8 @@ export function BooksScene() {
       }
       canvas.style.cursor = cur;
 
-      books.forEach((b) => screenPos(b));
-      books.forEach((b) => tickBook(b, dt, t));
+      bookInstances.forEach((b) => screenPos(b));
+      bookInstances.forEach((b) => tickBook(b, dt, t));
       leaves.update(dt, t);
 
       parX.t = RM ? 0 : ptr.ndcX * 0.02;
@@ -1779,15 +1521,14 @@ export function BooksScene() {
         if (!pillOn) {
           pillX.set(tx);
           pillY.set(ty);
-          pillOn = true;
         }
         pillX.t = tx;
         pillY.t = ty;
         if (openBtnRef.current) {
           openBtnRef.current.style.left = pillX.update(dt) + 'px';
           openBtnRef.current.style.top = pillY.update(dt) + 'px';
-          openBtnRef.current.classList.add('on');
         }
+        if (!pillOn) showPill();
       } else {
         hidePill();
       }
@@ -1795,9 +1536,7 @@ export function BooksScene() {
       renderer.render(scene, camera);
     }
 
-    // ---------------------------------------------------------------------
-    // 9. Entrance + resize
-    // ---------------------------------------------------------------------
+    // Entrance + resize
     function relayout() {
       const r = root!.getBoundingClientRect();
       dims.w = Math.max(1, Math.round(r.width));
@@ -1811,7 +1550,8 @@ export function BooksScene() {
     }
 
     relayout();
-    books.forEach((b, i) => {
+    currentWindow.forEach((bi, i) => {
+      const b = bookInstances[bi];
       const slot = SLOTS.hero[i];
       const s = b.springs;
       s.px.set(slot.p[0]);
@@ -1824,18 +1564,20 @@ export function BooksScene() {
       b.slotScale = slot.s;
       setT(() => setTargets(b, slot), 240 + i * 150);
     });
+    bookInstances.forEach((b, idx) => {
+      if (!currentWindow.includes(idx)) b.root.visible = false;
+    });
+    rebuildHitMeshes();
     camTo('hero');
     animate();
 
     const onWindowResize = () => relayout();
-    window.addEventListener('resize', onWindowResize);
-    window.addEventListener('orientationchange', onWindowResize);
     let orientationTimeout: ReturnType<typeof setTimeout> | null = null;
     const onOrientation = () => {
       relayout();
       orientationTimeout = setT(relayout, 250);
     };
-    window.removeEventListener('orientationchange', onWindowResize);
+    window.addEventListener('resize', onWindowResize);
     window.addEventListener('orientationchange', onOrientation);
     let visualViewportHandler: (() => void) | null = null;
     if (window.visualViewport) {
@@ -1845,9 +1587,7 @@ export function BooksScene() {
     const ro = new ResizeObserver(() => relayout());
     ro.observe(root);
 
-    // ---------------------------------------------------------------------
     // Cleanup
-    // ---------------------------------------------------------------------
     return () => {
       cancelled = true;
       if (rafId) cancelAnimationFrame(rafId);
@@ -1882,62 +1622,179 @@ export function BooksScene() {
           });
         }
       });
+      scene.environment?.dispose();
+      scene.environment = null;
       renderer.dispose();
     };
-  }, []);
+  }, [books]);
+
+  const themeVars: React.CSSProperties = themeColors
+    ? ({
+      '--bs-navy': themeColors.navy ?? '#141a32',
+      '--bs-pink': themeColors.pink ?? '#f591ac',
+      '--bs-cream': themeColors.cream ?? '#fdfbf4',
+      '--bs-lav': themeColors.lav ?? '#c9d0ee',
+      '--bs-peri': themeColors.peri ?? '#96a2de',
+    } as React.CSSProperties)
+    : ({
+      '--bs-navy': '#141a32',
+      '--bs-pink': '#f591ac',
+      '--bs-cream': '#fdfbf4',
+      '--bs-lav': '#c9d0ee',
+      '--bs-peri': '#96a2de',
+    } as React.CSSProperties);
+  if (themeColors?.bg) (themeVars as any).background = themeColors.bg;
+
+  const panelVisible = uiMode === 'detail';
+  const heroWordVisible = mounted && uiMode === 'hero';
+  const canCarousel = showCarousel && books.length > 3;
+
+  const delayMap: Record<number, string> = {
+    50: 'delay-[50ms]',
+    130: 'delay-[130ms]',
+    210: 'delay-[210ms]',
+    270: 'delay-[270ms]',
+    330: 'delay-[330ms]',
+  };
+
+  const dpChild = (delayMs: number) =>
+    panelVisible
+      ? `opacity-100 translate-y-0 transition-[opacity,transform] duration-[600ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${delayMap[delayMs] || ''}`
+      : 'opacity-0 translate-y-[28px] transition-[opacity,transform] duration-[280ms] ease-out';
 
   return (
-    <div ref={rootRef} className="book-showcase">
-      <div className="bs-hero-word">
-        <span>Books</span>
+    <div
+      ref={rootRef}
+      className={`book-showcase relative isolate h-[100svh] min-h-[560px] overflow-hidden text-white font-sans bg-[#fafafa] dark:bg-[#1b1b1b] [-webkit-tap-highlight-color:transparent] ${className || ''}`}
+      style={themeVars}
+    >
+      {/* hero word */}
+      <div
+        className={`pointer-events-none absolute left-1/2 top-[18%] z-[1] -translate-x-1/2 select-none transition-all duration-500 ease-out ${heroWordVisible ? 'translate-y-0 opacity-100' : uiMode === 'hero' ? '-translate-y-0 translate-y-[60px] opacity-0' : '-translate-y-11 opacity-0'
+          }`}
+      >
+        <span className="block whitespace-nowrap text-[#1b1b1b] dark:text-[#fafafa] text-[min(22.5vw,45vh)] font-extrabold leading-[0.85] tracking-[-0.015em]">
+          {heroTitle}
+        </span>
       </div>
 
-      <canvas ref={canvasRef} className="bs-gl" />
+      <canvas ref={canvasRef} className="absolute inset-0 z-[2] block h-full w-full touch-none" />
 
-      <nav className="bs-nav">
-        <div className="bs-logo">Bestsellers</div>
-        <div className="bs-nav-r">
-          <button className="bs-menu-btn" aria-label="Menu">
-            =
+      {showNav && (
+        <nav className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-center justify-between px-[42px] py-[26px] max-[760px]:px-5 max-[760px]:py-[18px]">
+          <div className="pointer-events-auto text-[clamp(20px,2.2vw,29px)] font-extrabold tracking-[-0.01em] text-[#1b1b1b] dark:text-[#fafafa]">
+            Bestsellers
+          </div>
+        </nav>
+      )}
+
+      {canCarousel && (
+        <>
+          <button
+            type="button"
+            aria-label="Previous books"
+            onClick={() => shiftCarouselRef.current(-1)}
+            className={`absolute left-3 top-1/2 z-30 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[var(--bs-cream)]/90 text-[var(--bs-navy)] shadow-lg transition-all duration-300 hover:scale-105 hover:bg-[var(--bs-cream)] md:left-6 md:h-12 md:w-12 ${uiMode === 'hero' ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+              }`}
+          >
+            <ChevronLeft />
           </button>
-          <button className="bs-cta">Get Tickets</button>
-        </div>
-      </nav>
+          <button
+            type="button"
+            aria-label="Next books"
+            onClick={() => shiftCarouselRef.current(1)}
+            className={`absolute right-3 top-1/2 z-30 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[var(--bs-cream)]/90 text-[var(--bs-navy)] shadow-lg transition-all duration-300 hover:scale-105 hover:bg-[var(--bs-cream)] md:right-6 md:h-12 md:w-12 ${uiMode === 'hero' ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+              }`}
+          >
+            <ChevronRight />
+          </button>
+        </>
+      )}
 
-      <button ref={openBtnRef} className="bs-open-btn" tabIndex={-1} aria-hidden="true">
+      {/* trailing "open" slip — position is driven by the animation loop via inline style */}
+      <button
+        ref={openBtnRef}
+        tabIndex={-1}
+        aria-hidden="true"
+        className={
+          'absolute left-0 top-0 z-30 -translate-x-1/2 -translate-y-1/2 rotate-[-1.6deg] px-[38px] pb-[18px] pt-4 ' +
+          'text-[15px] font-bold uppercase tracking-[0.1em] text-[var(--bs-navy)] pointer-events-none ' +
+          'transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[left,top,opacity,transform] ' +
+          '[clip-path:polygon(0%_0.9%,8.3%_0.8%,16.7%_6.3%,25%_3.8%,33.3%_5.5%,41.7%_2.7%,50%_5.2%,58.3%_0.4%,66.7%_5.9%,75%_6.5%,83.3%_1%,91.7%_6.4%,100%_0.7%,97.7%_20%,97%_40%,99.6%_60%,98.7%_80%,100%_96.5%,91.7%_99.8%,83.3%_95.6%,75%_94.9%,66.7%_96.6%,58.3%_93.5%,50%_97.9%,41.7%_99.5%,33.3%_93.2%,25%_93.6%,16.7%_93.2%,8.3%_93.1%,0%_93.5%,0.2%_80%,1.1%_60%,3.9%_40%,3.8%_20%)] ' +
+          '[background:repeating-linear-gradient(92deg,rgba(90,74,40,0.03)_0px_2px,transparent_2px_6px),radial-gradient(125%_150%_at_28%_0%,#fffdf7_0%,#f8f2e3_58%,#ede4cf_100%)] ' +
+          '[filter:drop-shadow(0_2px_1px_rgba(0,0,0,0.16))_drop-shadow(0_14px_26px_rgba(0,0,0,0.4))] ' +
+          OPEN_BTN_OFF.join(' ')
+        }
+      >
         Open
       </button>
-      <button ref={closeBtnRef} className="bs-close-btn" aria-label="Close detail view">
+
+      <button
+        ref={closeBtnRef}
+        aria-label="Close detail view"
+        className={`absolute left-1/2 top-[30px] z-40 -translate-x-1/2 inline-flex h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-[var(--bs-cream)]/40 bg-transparent text-[17px] leading-none text-[var(--bs-cream)] transition-[opacity,border-color] duration-300 delay-150 hover:border-[var(--bs-cream)]/90 max-[760px]:left-auto max-[760px]:right-[18px] max-[760px]:top-[18px] max-[760px]:translate-x-0 [-webkit-tap-highlight-color:transparent] ${uiMode === 'detail' ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+          }`}
+      >
         &#10005;
       </button>
 
-      <div className="bs-dp" ref={dpRef} aria-live="polite">
-        <h1 ref={dpTitleRef} />
-        <p ref={dpDescRef} />
-        <div className="bs-meta">
-          <div className="bs-stars" ref={dpStarsRef} />
-          <div className="bs-sep" />
-          <div className="bs-src">Goodreads</div>
-          <div className="bs-year" ref={dpYearRef} />
+      {showDetailPanel && (
+        <div
+          ref={dpRef}
+          aria-live="polite"
+          className={`absolute right-[7%] top-1/2 z-[15] w-[min(560px,42%)] -translate-y-1/2 pointer-events-none max-[760px]:right-auto max-[760px]:left-1/2 max-[760px]:top-auto max-[760px]:bottom-[3.5%] max-[760px]:w-[min(560px,92vw)] max-[760px]:-translate-x-1/2 max-[760px]:translate-y-0 ${panelVisible ? 'visible' : 'invisible delay-[500ms]'
+            }`}
+        >
+          <h1 className={`m-0 text-[var(--bs-pink)] text-[clamp(52px,5.6vw,92px)] font-extrabold leading-[0.98] tracking-[-0.015em] max-[760px]:text-[clamp(36px,9.5vw,54px)] ${dpChild(50)}`}>
+            {selectedCfg?.title}
+          </h1>
+          <p className={`mt-[26px] max-w-[54ch] text-[var(--bs-lav)] text-[clamp(16px,1.25vw,19px)] leading-[1.65] max-[760px]:mt-4 max-[760px]:line-clamp-4 max-[760px]:text-[15px] ${dpChild(130)}`}>
+            {selectedCfg?.desc}
+          </p>
+          <div className={`mt-[34px] flex items-center gap-[18px] max-[760px]:mt-[18px] ${dpChild(210)}`}>
+            <div className="flex gap-[5px]">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <svg
+                  key={i}
+                  viewBox="0 0 24 24"
+                  className={`h-[25px] w-[25px] fill-[var(--bs-pink)] ${i < (selectedCfg?.stars ?? 0) ? '' : 'opacity-25'}`}
+                >
+                  <path d="M12 2.6l2.8 6 6.6.6-5 4.4 1.5 6.5L12 16.7 6.1 20.1l1.5-6.5-5-4.4 6.6-.6z" />
+                </svg>
+              ))}
+            </div>
+            <div className="h-6 w-px bg-[var(--bs-lav)]/[0.28]" />
+            <div className="text-[19px] italic text-[#98a4d6]">Goodreads</div>
+            <div className="ml-auto text-[19px] italic text-[#98a4d6]">{selectedCfg?.year}</div>
+          </div>
+          <div className={`mt-[26px] border-t border-[var(--bs-lav)]/[0.18] max-[760px]:mt-4 ${dpChild(270)}`} />
+          <div
+            className={`pointer-events-auto mt-8 inline-flex items-center gap-[10px] rounded-full bg-[#1a2140] p-[10px] shadow-[0_24px_60px_rgba(0,0,0,0.45)] max-[760px]:mt-[18px] max-[760px]:flex-wrap max-[760px]:rounded-[28px] ${dpChild(330)}`}
+          >
+            <button className="inline-flex h-[54px] items-center gap-[10px] rounded-full bg-[var(--bs-cream)] px-[26px] text-[16.5px] font-semibold text-[var(--bs-navy)] transition-[transform,filter] duration-[220ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.04] hover:brightness-105 max-[760px]:h-12 max-[760px]:px-5 max-[760px]:text-[15px]">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-5 w-5">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18M12 3c2.8 2.6 2.8 15.4 0 18M12 3c-2.8 2.6-2.8 15.4 0 18" />
+              </svg>
+              <span>English</span>
+            </button>
+            <button className="inline-flex h-[54px] items-center gap-[10px] rounded-full bg-[var(--bs-peri)] px-[26px] text-[16.5px] font-semibold text-[#10152c] transition-[transform,filter] duration-[220ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.04] hover:brightness-105 max-[760px]:h-12 max-[760px]:px-5 max-[760px]:text-[15px]">
+              Buy Now
+            </button>
+            <button className="inline-flex h-[54px] items-center gap-[10px] rounded-full bg-[var(--bs-peri)] px-[26px] text-[16.5px] font-semibold text-[#10152c] transition-[transform,filter] duration-[220ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.04] hover:brightness-105 max-[760px]:h-12 max-[760px]:px-5 max-[760px]:text-[15px]">
+              Buy Audiobook
+            </button>
+            <button
+              aria-label="Save"
+              className="inline-flex h-[54px] w-[54px] items-center justify-center gap-[10px] rounded-full bg-[#242c50] px-0 text-[var(--bs-lav)] transition-[transform,filter] duration-[220ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.04] hover:brightness-105"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-5 w-5">
+                <path d="M7 3h10v18l-5-4-5 4z" />
+              </svg>
+            </button>
+          </div>
         </div>
-        <div className="bs-rule" />
-        <div className="bs-actions">
-          <button className="bs-pill bs-lang">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7}>
-              <circle cx="12" cy="12" r="9" />
-              <path d="M3 12h18M12 3c2.8 2.6 2.8 15.4 0 18M12 3c-2.8 2.6-2.8 15.4 0 18" />
-            </svg>
-            <span>English</span>
-          </button>
-          <button className="bs-pill bs-buy">Buy Now</button>
-          <button className="bs-pill bs-buy">Buy Audiobook</button>
-          <button className="bs-pill bs-iconb" aria-label="Save">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7}>
-              <path d="M7 3h10v18l-5-4-5 4z" />
-            </svg>
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
