@@ -4,9 +4,11 @@ import { ChevronDown, Text } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
 
-export function DocsMobileToc({ items }: { items: string[] }) {
+export type TOCItem = { title: string; depth: number };
+
+export function DocsMobileToc({ items }: { items: TOCItem[] }) {
   const links = useMemo(
-    () => items.map((item) => ({ title: item, id: slugify(item) })),
+    () => items.map((item) => ({ title: item.title, id: slugify(item.title), depth: item.depth })),
     [items],
   );
   const [activeId, setActiveId] = useState(links[0]?.id ?? '');
@@ -62,9 +64,9 @@ export function DocsMobileToc({ items }: { items: string[] }) {
   );
 }
 
-export function DocsDesktopToc({ items }: { items: string[] }) {
+export function DocsDesktopToc({ items }: { items: TOCItem[] }) {
   const links = useMemo(
-    () => items.map((item) => ({ title: item, id: slugify(item) })),
+    () => items.map((item) => ({ title: item.title, id: slugify(item.title), depth: item.depth })),
     [items],
   );
   const [activeId, setActiveId] = useState(links[0]?.id ?? '');
@@ -118,7 +120,7 @@ function TocLinks({
   activeId,
   onClick,
 }: {
-  links: { title: string; id: string }[];
+  links: { title: string; id: string; depth: number }[];
   activeId: string;
   onClick?: () => void;
 }) {
@@ -126,21 +128,26 @@ function TocLinks({
     return <p className="py-1 ps-3 text-sm text-fd-muted-foreground">No headings</p>;
   }
 
-  return links.map((link) => (
-    <a
-      key={link.id}
-      href={`#${link.id}`}
-      onClick={onClick}
-      className={cn(
-        'border-s py-1 ps-3 text-sm transition-colors hover:text-fd-foreground',
-        activeId === link.id
-          ? 'border-fd-primary text-fd-primary'
-          : 'border-fd-border text-fd-muted-foreground',
-      )}
-    >
-      {link.title}
-    </a>
-  ));
+  return (
+    <div className="relative flex flex-col border-s border-fd-border/70 py-1">
+      {links.map((link) => (
+        <a
+          key={link.id}
+          href={`#${link.id}`}
+          onClick={onClick}
+          className={cn(
+            'relative py-1.5 text-sm transition-colors hover:text-fd-foreground block',
+            link.depth === 3 ? 'ps-6 text-[0.8125rem]' : 'ps-4 text-[0.875rem]',
+            activeId === link.id
+              ? 'text-brand font-medium before:absolute before:left-[-1px] before:top-0 before:bottom-0 before:w-px before:bg-brand'
+              : 'text-fd-muted-foreground'
+          )}
+        >
+          {link.title}
+        </a>
+      ))}
+    </div>
+  );
 }
 
 function ProgressCircle({ className, value }: { className?: string; value: number }) {

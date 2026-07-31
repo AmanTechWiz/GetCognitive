@@ -3,7 +3,6 @@
 import { ChevronRight, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
-import { docPages } from '@/content/docs/pages';
 
 type SearchItem = {
   id: string;
@@ -15,37 +14,6 @@ type SearchItem = {
   searchable: string;
   body: string;
 };
-
-const searchItems: SearchItem[] = docPages.flatMap((page) => {
-  const url = `/docs/${page.slug.join('/')}`;
-  const breadcrumbs = [page.group, page.parentTitle].filter(Boolean) as string[];
-  const description = page.description ?? page.parentTitle ?? page.group;
-  const pageItem: SearchItem = {
-    id: `page:${page.slug.join('/')}`,
-    type: 'page',
-    breadcrumbs,
-    content: page.title,
-    description,
-    url,
-    body: page.body,
-    searchable: normalizeSearchText(
-      [page.title, description, page.group, page.parentTitle, page.body].join(' '),
-    ),
-  };
-  const headingItems = (page.toc ?? []).map((heading) => ({
-    id: `heading:${page.slug.join('/')}:${heading}`,
-    type: 'heading' as const,
-    breadcrumbs: [...breadcrumbs, page.title],
-    content: heading,
-    description,
-    url: `${url}#${slugify(heading)}`,
-    body: page.body,
-    searchable: normalizeSearchText([heading, page.title, description, page.body].join(' ')),
-  }));
-
-  return [pageItem, ...headingItems];
-});
-
 type SearchPanelProps = {
   className?: string;
   embedded?: boolean;
@@ -60,7 +28,8 @@ export function CognitiveSearchPanel({
   autoType = false,
   initialSearch = 'agentic',
   onClose,
-}: SearchPanelProps) {
+  searchItems,
+}: SearchPanelProps & { searchItems: SearchItem[] }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState(autoType ? '' : initialSearch);
 
@@ -110,7 +79,7 @@ export function CognitiveSearchPanel({
         ...result.item,
         description: getSearchDescription(result.item, query),
       }));
-  }, [search]);
+  }, [search, searchItems]);
 
   return (
     <div
@@ -194,7 +163,7 @@ export function CognitiveSearchPanel({
       </div>
 
       <div className="bg-fd-secondary/50 p-2.5 text-[11px] text-fd-muted-foreground">
-        Search {docPages.length} Cognitive articles and sections
+        Search {searchItems.length} Cognitive articles and sections
       </div>
     </div>
   );
@@ -246,9 +215,11 @@ function slugify(value: string) {
 export function CognitiveSearchTrigger({
   className,
   mode = 'modal',
+  searchItems = [],
 }: {
   className?: string;
   mode?: 'modal' | 'dropdown';
+  searchItems?: any[];
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -298,6 +269,7 @@ export function CognitiveSearchTrigger({
             initialSearch=""
             onClose={() => setOpen(false)}
             className="max-h-[360px]"
+            searchItems={searchItems}
           />
         </div>
       ) : null}
@@ -318,7 +290,7 @@ export function CognitiveSearchTrigger({
             >
               <X className="size-4" />
             </button>
-            <CognitiveSearchPanel initialSearch="" onClose={() => setOpen(false)} />
+            <CognitiveSearchPanel initialSearch="" onClose={() => setOpen(false)} searchItems={searchItems} />
           </div>
         </div>
       ) : null}

@@ -1,0 +1,330 @@
+---
+title: "Chapter 22 - Multi-Tenant Systems"
+description: "Building AI systems for many customers safely: tenant isolation, cache isolation, memory isolation, and incident response."
+category: "AI Security"
+date: "2026-08-01"
+---
+
+# Chapter 22 - Multi-Tenant Systems
+
+Multi-tenant means one system serves many customers (tenants) while keeping their data isolated.
+
+The defining failure of multi-tenant SaaS is:
+
+> Tenant A sees Tenant B's data.
+
+In AI systems, this can happen through more paths than in traditional apps:
+
+- retrieval (RAG),
+- tool calls,
+- caching layers,
+- conversation memory,
+- logs and analytics,
+- background jobs.
+
+This chapter teaches you how to design AI systems so tenant isolation is not "best effort", but a real boundary.
+
+---
+
+## Learning Goals
+
+By the end, you should be able to:
+
+1. Identify cross-tenant leak paths unique to AI pipelines.
+2. Design retrieval that cannot return cross-tenant chunks.
+3. Design caches that cannot serve cross-tenant artifacts.
+4. Scope memory correctly and avoid context contamination.
+5. Write an incident playbook for suspected cross-tenant exposure.
+
+---
+
+## Why Multi-Tenant AI Is Hard
+
+Traditional apps have a small number of data flows. AI apps have many.
+
+A simplified AI pipeline:
+
+request -> auth -> retrieval -> prompt -> model -> tool -> prompt -> model -> response
+
+Each arrow is a chance to drop tenant scope.
+
+Also, LLMs are very good at summarizing leaked data into convincing narratives. So a small cross-tenant chunk can become a serious exposure.
+
+---
+
+## Threat Model: Cross-Tenant Leakage
+
+### Assets
+
+- tenant-private docs, tickets, and records,
+- derived artifacts (embeddings, summaries, labels),
+- operational metadata (usage, costs),
+- secrets and internal runbooks.
+
+### Attackers
+
+- malicious tenant probing for leaks,
+- curious tenant asking edge-case questions,
+- accidental exposure via bugs (most common).
+
+### High-risk surfaces
+
+- vector search without tenant filtering,
+- shared caches keyed too broadly,
+- global memory stores,
+- tools that accept tenantId/userId from the model,
+- logs storing raw prompts and retrieved text.
+
+---
+
+## Tenant Isolation Fundamentals
+
+### Make tenant scope first-class
+
+Every request computes one tenantId from authentication.
+Then propagate it everywhere:
+
+- retrieval,
+- tools,
+- caches,
+- background jobs,
+- metrics tags,
+- audit logs.
+
+If tenant scope is optional anywhere, it will be missing somewhere eventually.
+
+### Defense in depth
+
+Combine:
+
+- middleware checks,
+- scoped data access APIs,
+- data store enforcement (row-level security or separate stores),
+- cache key scoping.
+
+Your goal:
+
+> One bug should not become a breach.
+
+---
+
+## Isolation In Retrieval (RAG)
+
+Retrieval is a frequent cause of cross-tenant leaks.
+
+### The classic bug
+
+All tenants share an embeddings index. Similarity search returns the closest chunks.
+If you forget tenant filtering, similarity can cross tenants.
+
+### Retrieval designs
+
+1) Separate index per tenant
+
+- Pros: strong isolation, simple.
+- Cons: more operational overhead.
+
+2) Shared index with strict metadata filtering
+
+- Pros: efficient.
+- Cons: easy to get wrong; must be enforced by API design and tests.
+
+3) Hybrid
+
+- large tenants get dedicated indexes,
+- smaller tenants share with strict filters.
+
+### Non-negotiable rules for shared-index retrieval
+
+- tenant filtering is mandatory, not optional,
+- retrieval functions reject calls without tenant scope,
+- permission filtering inside a tenant is applied before the model sees text,
+- adversarial tests ensure near-identical docs across tenants never cross.
+
+---
+
+## Cache Isolation
+
+AI systems have many caches, and each can leak if scoped incorrectly.
+
+### What gets cached
+
+- retrieval results,
+- tool outputs,
+- model responses,
+- embeddings,
+- agent intermediate steps.
+
+### The most common bug: missing tenant scope in cache keys
+
+If a cache can contain tenant-private context, its key must include tenantId, and often userId.
+
+Also include versions:
+
+- prompt version,
+- retrieval index version,
+- tool version.
+
+This prevents serving stale data after changes and reduces accidental cross-scope reuse.
+
+### Semantic caches are risky
+
+Caching "similar question, reuse answer" can easily leak across tenants if shared.
+
+Rule:
+
+> Do not share semantic caches across tenants. Prefer per-tenant caches or disable the feature.
+
+### Cache invalidation is a security issue
+
+If a tenant deletes a document or permissions change but caches still serve it, that is a leak.
+Use:
+
+- TTLs,
+- versioning,
+- and invalidation hooks where feasible.
+
+---
+
+## Memory Isolation
+
+Memory is a database plus retrieval. It must be isolated like any other store.
+
+Common failure patterns:
+
+- memory records missing tenantId/userId,
+- retrieval forgetting filters,
+- background summarizers dropping tenant scope,
+- shared in-memory agent state across requests.
+
+Rules for safe memory:
+
+- scope every record with tenantId + userId (often sessionId),
+- filter retrieval by tenantId + userId,
+- keep memory minimal,
+- give users delete controls,
+- avoid shared agent instances across tenants.
+
+---
+
+## Shared Infrastructure Risks
+
+### Model servers and performance caches
+
+If you run your own model servers, batching and caching can improve performance.
+They are not automatically unsafe, but they must preserve request boundaries and never allow cross-request reads.
+
+### Observability and debugging tools
+
+Logs often contain prompts and retrieved docs. Broad internal access can create exposure even without product bugs.
+Mitigations:
+
+- store redacted artifacts by default,
+- restrict access to raw prompts,
+- define retention and deletion,
+- audit access.
+
+### Queues and background workers
+
+Multi-tenant workers can swap scope due to bugs.
+Mitigations:
+
+- include tenantId in every message,
+- validate tenantId at job start,
+- consider separate queues for high-sensitivity workflows.
+
+---
+
+## Authorization Patterns
+
+Patterns that reduce mistakes:
+
+- Scoped data access APIs: \`db.forTenant(tenantId)\` style.
+- Capability-based tools: narrow tools instead of generic \`run_sql\`.
+- Policy-as-code: central, versioned, testable rules.
+
+Do not bury policy inside prompts.
+
+---
+
+## Incident Response Playbook
+
+Cross-tenant exposure is high severity. Have a playbook.
+
+1) Contain
+
+- disable retrieval and high-risk tools via kill switch,
+- consider disabling the assistant entirely if scope is unknown.
+
+2) Investigate
+
+- use correlation IDs to trace requests,
+- identify affected tenants and time windows,
+- determine what data was exposed (retrieval logs, tool logs).
+
+3) Recover
+
+- patch the root cause,
+- invalidate caches,
+- reindex retrieval stores if needed,
+- rotate secrets if there is any chance they were exposed.
+
+4) Communicate
+
+- notify stakeholders quickly with known facts,
+- follow your legal/regulatory requirements.
+
+---
+
+## Production Tradeoffs
+
+- Stronger isolation (per-tenant indexes/caches) improves security but increases cost and operational complexity.
+- Performance optimizations (shared caches) can be safe if correctly scoped and tested, but errors are catastrophic.
+
+Rule of thumb:
+
+> If a cache can contain tenant-private data, scope it by tenant (and often user) or do not use it.
+
+---
+
+## Checklists
+
+### Tenant isolation checklist
+
+- [ ] tenantId derived from auth and propagated everywhere.
+- [ ] data store enforces tenant isolation for defense in depth.
+- [ ] retrieval filters by tenant and user permissions before the model sees text.
+- [ ] tools do not accept tenantId/userId from model output.
+- [ ] background jobs validate tenant scope.
+
+### Cache isolation checklist
+
+- [ ] cache keys include tenantId and correct scope (often userId).
+- [ ] semantic caches are per-tenant or disabled.
+- [ ] TTLs and versioning prevent stale leaks.
+- [ ] permission changes and deletes cannot be served from stale caches.
+
+### Memory isolation checklist
+
+- [ ] memory records scoped by tenantId/userId/sessionId.
+- [ ] memory retrieval filtered and tested.
+- [ ] users can delete memory.
+- [ ] no shared in-memory agent state across tenants.
+
+---
+
+## Exercises
+
+1. Write five cache keys your system uses (real or hypothetical). For each: does it include tenantId, does it need userId, and what happens if it is wrong?
+2. Create an adversarial dataset to test cross-tenant retrieval leaks with near-identical docs across two tenants.
+3. Design a safe semantic cache strategy for a multi-tenant assistant, or explain why you would not ship one.
+4. Write an incident playbook for suspected cross-tenant exposure: containment, identifying affected tenants, cache invalidation, and communication.
+
+---
+
+## Summary
+
+- Multi-tenant AI safety requires isolation across retrieval, tools, caches, memory, logs, and workers.
+- Make tenant scope first-class and enforce it at multiple layers.
+- Retrieval and caching are common leak sources; scope keys and filters correctly and test adversarially.
+- Plan for incidents with kill switches, audit logs, and cache invalidation.

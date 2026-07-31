@@ -10,6 +10,7 @@ import {
 import { Marquee } from '@/app/(home)/marquee';
 import { ServerCodeBlock } from '@/components/codeblock';
 import { CognitiveSearchPanel } from '@/components/cognitive-search';
+import { getAllDocs, getSearchItems } from '@/content/docs/docs-server';
 import {
   Hero,
   AgnosticBackground,
@@ -57,7 +58,9 @@ const cardVariants = cva('rounded-2xl text-sm p-6 bg-origin-border shadow-lg', {
   },
 });
 
-export default function Page() {
+export default async function Page() {
+  const docs = getAllDocs();
+  const searchItems = getSearchItems(docs);
   return (
     <main className="text-landing-foreground pt-4 pb-6 dark:text-landing-foreground-dark md:pb-12">
       <div className="relative flex min-h-[600px] h-[70vh] max-h-[900px] border rounded-2xl overflow-hidden mx-auto w-full max-w-[1400px] bg-origin-border">
@@ -103,6 +106,7 @@ export default function Page() {
             embedded
             autoType
             className="mx-auto h-[350px] w-full max-w-[800px]"
+            searchItems={searchItems}
           />
         </div>
         {/*

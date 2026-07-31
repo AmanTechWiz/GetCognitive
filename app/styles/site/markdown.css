@@ -9,6 +9,10 @@
     @apply text-fd-foreground tracking-tight font-medium;
   }
 
+  .md h1:first-child {
+    @apply hidden;
+  }
+
   .md h1 {
     @apply text-[1.75em] mt-2 mb-4 font-semibold;
   }

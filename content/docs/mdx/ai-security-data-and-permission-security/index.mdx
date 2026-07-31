@@ -1,0 +1,347 @@
+---
+title: "Chapter 21 - Data & Permission Security"
+description: "Enforcing real permission boundaries in AI apps: authZ, data minimization, secrets, PII, secure tools, and sandboxing."
+category: "AI Security"
+date: "2026-08-01"
+---
+
+# Chapter 21 - Data & Permission Security
+
+In Chapter 20, you learned how untrusted text can hijack behavior. This chapter is about the harder boundary:
+
+> Even if the model is confused, coerced, or compromised, it must not cross a permission boundary.
+
+When AI systems leak data, the root cause is usually not "the model hallucinated".
+It is usually an engineering flaw:
+
+- missing tenant filter,
+- tool schema lets the model choose identity,
+- overly powerful tool,
+- cache keyed too broadly,
+- or logs that collected too much.
+
+This chapter gives you an end-to-end set of patterns to prevent those failures.
+
+---
+
+## Learning Goals
+
+By the end, you should be able to:
+
+1. Explain why authorization must be deterministic and independent of the model.
+2. Identify privilege escalation risks in tool schemas and pipelines.
+3. Design tools that are safe by construction (identity bound server-side, minimal outputs).
+4. Build a data handling policy for prompts, tool outputs, logs, and analytics.
+5. Explain what sandboxing must protect and the practical controls that deliver it.
+
+---
+
+## Threat Model
+
+### Assets
+
+- tenant-private documents, tickets, and business records,
+- derived artifacts (embeddings, summaries),
+- secrets (API keys, OAuth tokens, credentials),
+- authority (writes: refunds, emails, permission changes).
+
+### Attackers
+
+- authenticated user attempting privilege escalation,
+- malicious tenant attempting cross-tenant access,
+- insider or compromised internal account,
+- content-supply attacker influencing retrieved text.
+
+### Attack surfaces
+
+- retrieval (RAG),
+- tool calls,
+- caches,
+- memory features,
+- logs and analytics.
+
+The target state:
+
+> If the model fails, the app still enforces policy.
+
+---
+
+## The Rules: Identity, Scope, And Authorization
+
+Rule 1:
+
+> Identity comes from authentication, not from the model.
+
+Rule 2:
+
+> Tenant scope comes from authentication, not from the model.
+
+Rule 3:
+
+> Authorization is enforced in code, not in prompts.
+
+Rule 4:
+
+> The model never receives long-lived secrets.
+
+If you design your system so these four rules are true, you eliminate most catastrophic failure modes.
+
+---
+
+## Design Pattern: The App Owns Authorization
+
+Safe architecture:
+
+1. Authenticate request (user identity).
+2. Compute tenant scope from auth.
+3. Model proposes actions/queries.
+4. App validates and authorizes using deterministic policy.
+5. Tools execute within a scoped environment and return minimal outputs.
+
+Defense in depth:
+
+- API layer: authN and coarse authZ.
+- Retrieval layer: permission-filter and tenant-scope.
+- Tool executor: validate + authorize + budget.
+- Data store: enforce tenant isolation (row-level security or separate stores).
+
+---
+
+## Tool Design That Cannot Escalate Privileges
+
+This is the highest ROI section in the whole part.
+
+### Step 1: Remove identity fields from tool schemas
+
+Unsafe:
+
+\`\`\`ts
+type GetInvoiceUnsafe = (args: { tenantId: string; invoiceId: string }) => Promise<any>;
+\`\`\`
+
+Safer:
+
+\`\`\`ts
+type GetInvoice = (args: { invoiceId: string }) => Promise<{ id: string; totalUsd: number; status: string } | null>;
+\`\`\`
+
+Then your app binds tenant scope from auth context and enforces authZ.
+
+### Step 2: Minimize tool outputs
+
+Return only the fields needed to complete the current task.
+
+Examples:
+
+- For a support assistant, return status and plan tier, not full billing history.
+- For a CRM assistant, return deal stage and owner, not raw notes unless needed.
+
+Minimal outputs reduce:
+
+- accidental leaks,
+- prompt injection surface,
+- and cost.
+
+### Step 3: Split tools by risk
+
+Prefer separate tools:
+
+- \`create_draft_email\` (medium risk)
+- \`send_email\` (high risk)
+
+The assistant can draft freely, but sending requires confirmation and policy checks.
+
+### Step 4: Add allowlists and budgets
+
+Examples:
+
+- SQL: allowlist views only, max rows, max runtime.
+- Email: allowlist domains, rate limit, confirmation.
+- File access: allowlist directories, max bytes, reject traversal.
+
+### Step 5: Confirm high-risk actions
+
+For actions with high blast radius, require explicit user confirmation:
+
+- show action summary,
+- show key parameters,
+- ask user to approve.
+
+This is normal control design for automation systems.
+
+---
+
+## Data Leakage Failure Modes
+
+When you see a leak report, check these first.
+
+### 1) Retrieval returns unauthorized docs
+
+Vector search without tenant/user filters is the classic cause.
+
+Fix:
+
+- make tenant filtering mandatory,
+- test retrieval with adversarial data across tenants.
+
+### 2) Caches are not scoped
+
+If you cache retrieval results, tool outputs, or model responses with keys that do not include tenant scope, you can serve another tenant's artifacts.
+
+Fix:
+
+- include tenantId (and often userId) in cache keys,
+- include versions (prompt version, index version),
+- set TTLs.
+
+### 3) Memory is not isolated
+
+Memory features are just databases. If they are not scoped and filtered, they leak.
+
+Fix:
+
+- tenantId + userId scoping on every record,
+- retrieval filters,
+- TTLs,
+- user delete controls.
+
+### 4) Logs and analytics over-collect
+
+Storing raw prompts and retrieved docs creates a second breach surface.
+
+Fix:
+
+- redact by default,
+- restrict access,
+- define retention and deletion,
+- audit access.
+
+---
+
+## Secret Management
+
+### Never put secrets in prompts
+
+Do not embed API keys or tokens in system prompts or tool-call arguments.
+
+### Server-side secret binding
+
+Tools should take high-level inputs (resource IDs, safe parameters).
+Your server attaches secrets out-of-band at execution time.
+
+### Rotation and blast radius
+
+- separate secrets by environment (dev/stage/prod),
+- prefer per-service and per-tenant scopes where possible,
+- rotate regularly and on incidents.
+
+---
+
+## PII Protection
+
+PII protection is a combination of:
+
+- authorization (who is allowed to see it),
+- minimization (how much you include),
+- and logging policy (where it gets stored).
+
+Practical steps:
+
+- prefer IDs and labels over raw PII where possible,
+- redact PII in logs and analytics,
+- keep retention short for sensitive artifacts,
+- design UI and workflows so the model rarely needs raw PII.
+
+---
+
+## Secure Tool Execution
+
+Tool execution is where AI becomes operational risk.
+
+Controls you should expect in a production tool executor:
+
+- strict schema validation for arguments,
+- authorization checks using authenticated identity,
+- allowlists for dangerous operations,
+- budgets (timeouts, row limits, byte limits),
+- confirmation for high-risk writes,
+- audit logs with tenantId/userId and correlation IDs,
+- kill switch to disable tools quickly.
+
+---
+
+## Sandboxing
+
+If any tool can execute code or access sensitive networks, sandboxing is not optional.
+
+What sandboxing must protect:
+
+- host filesystem,
+- internal networks and services,
+- secrets in environment variables,
+- availability (CPU/memory bombs, infinite loops),
+- other tenants' data.
+
+Practical sandbox controls:
+
+- strong isolation (containers or microVMs),
+- read-only filesystem by default,
+- network egress deny by default (allow only needed endpoints),
+- CPU/memory limits and strict timeouts,
+- no long-lived credentials inside the sandbox.
+
+Sandboxing is defense in depth. You still need authZ and data minimization.
+
+---
+
+## Production Tradeoffs
+
+- Stricter authZ and sandboxing add engineering and operational cost, but they prevent catastrophic breaches.
+- Data minimization can reduce quality if done blindly; do it intentionally and design better workflows.
+- Generic tools are flexible but dangerous; narrow, capability-based tools are safer and easier to audit.
+
+---
+
+## Checklists
+
+### Permission boundary checklist
+
+- [ ] Identity and tenant scope derived from auth, never from model output.
+- [ ] Retrieval permission-filtered and tenant-scoped.
+- [ ] Tools validate + authorize + budget every call.
+- [ ] High-risk actions require confirmation.
+- [ ] Data store enforces tenant isolation for defense in depth.
+
+### Data handling checklist
+
+- [ ] No secrets in prompts.
+- [ ] Tool outputs sanitized and size-limited before sending to model.
+- [ ] PII minimized in prompts; redacted in logs/analytics.
+- [ ] Retention and deletion policies for prompts/responses/logs.
+
+### Sandboxing checklist (if execution exists)
+
+- [ ] Strong isolation.
+- [ ] Read-only filesystem by default.
+- [ ] Egress restricted.
+- [ ] CPU/memory/time limits enforced.
+- [ ] No long-lived credentials in sandbox.
+
+---
+
+## Exercises
+
+1. Redesign an unsafe tool: \`getCustomer({ tenantId, email })\`. Make it safe by construction.
+2. List five plausible engineering root causes for "Tenant B sometimes sees Tenant A's answer", and one mitigation each.
+3. Design a confirmation UX for \`send_email\` that prevents accidental or malicious blasts.
+4. Pick one sandbox control (egress deny, CPU limit, filesystem isolation) and explain what it blocks and what it cannot block.
+
+---
+
+## Summary
+
+- Authorization is deterministic policy enforced in code, not in prompts.
+- Never let the model choose identity or tenant scope.
+- Minimize sensitive data in prompts and logs; sanitize tool outputs.
+- Tool execution must be validated, authorized, budgeted, and audited.
+- If execution exists, sandbox it with defense in depth.

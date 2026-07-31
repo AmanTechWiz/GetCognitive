@@ -11,7 +11,7 @@ import {
   ThumbsDown,
   ThumbsUp,
 } from 'lucide-react';
-import { docPages, getDocBySlug, type DocPage } from '@/content/docs/pages';
+import { docPages, getDocBySlug, type DocPage } from '@/content/docs/docs-server';
 import { DocsDesktopToc, DocsMobileToc } from '@/components/docs/toc';
 import { cn } from '@/lib/cn';
 
@@ -30,7 +30,7 @@ export default async function DocsPage({
           <h1 className="text-2xl font-medium tracking-tight">Not found</h1>
           <p className="mt-2 text-sm text-fd-muted-foreground">This doc page does not exist.</p>
           <Link
-            href="/docs/getting-started"
+            href="/docs"
             className="mt-6 inline-flex justify-center rounded-lg bg-fd-primary px-4 py-2 text-sm font-medium text-fd-primary-foreground"
           >
             Go to Getting Started
@@ -142,10 +142,11 @@ function FooterNav({ previous, next }: { previous?: DocPage; next?: DocPage }) {
 
 function FooterItem({ item, direction }: { item: DocPage; direction: 'previous' | 'next' }) {
   const Icon = direction === 'previous' ? ChevronLeft : ChevronRight;
+  const itemHref = item.slug.length > 0 ? `/docs/${item.slug.join('/')}` : `/docs`;
 
   return (
     <Link
-      href={`/docs/${item.slug.join('/')}`}
+      href={itemHref}
       className={cn(
         'flex flex-col gap-2 rounded-lg border p-4 text-sm transition-colors hover:bg-fd-accent/80 hover:text-fd-accent-foreground max-sm:col-span-full',
         direction === 'next' && 'text-end',
@@ -172,7 +173,7 @@ function getSiblingPages(page: DocPage) {
 
   return {
     previous: index > 0 ? docPages[index - 1] : undefined,
-    next: index >= 0 ? docPages[index + 1] : undefined,
+    next: index >= 0 && index < docPages.length - 1 ? docPages[index + 1] : undefined,
   };
 }
 
