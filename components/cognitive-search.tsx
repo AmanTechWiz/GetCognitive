@@ -18,7 +18,7 @@ type SearchPanelProps = {
   className?: string;
   embedded?: boolean;
   autoType?: boolean;
-  initialSearch?: string;
+  initialSearch?: string | string[];
   onClose?: () => void;
 };
 
@@ -26,48 +26,86 @@ export function CognitiveSearchPanel({
   className,
   embedded = false,
   autoType = false,
-  initialSearch = 'agentic',
+  initialSearch = ['agentic', 'mcp', 'graph engineering'],
   onClose,
   searchItems,
 }: SearchPanelProps & { searchItems: SearchItem[] }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const [search, setSearch] = useState(autoType ? '' : initialSearch);
+  const [search, setSearch] = useState<string>(() => {
+    if (autoType) return '';
+    if (Array.isArray(initialSearch)) return initialSearch[0] || '';
+    return initialSearch || '';
+  });
+
+  const initialSearchKey = Array.isArray(initialSearch) ? initialSearch.join(',') : (initialSearch || '');
 
   useEffect(() => {
     if (!autoType) return;
 
-    let interval: ReturnType<typeof setInterval> | undefined;
+    let timeout: ReturnType<typeof setTimeout>;
+    let interval: ReturnType<typeof setInterval>;
+    let isMounted = true;
+    
+    const queries = Array.isArray(initialSearch)
+      ? (initialSearch.length > 0 ? initialSearch : [''])
+      : [initialSearch || ''];
+
     const root = rootRef.current;
     if (!root) return;
 
+    let queryIndex = 0;
+
+    const typeQuery = () => {
+      if (!isMounted) return;
+      const currentQuery = queries[queryIndex] || '';
+      let charIndex = 0;
+      let isDeleting = false;
+
+      interval = setInterval(() => {
+        if (!isDeleting) {
+          charIndex += 1;
+          setSearch(currentQuery.slice(0, charIndex));
+
+          if (charIndex >= currentQuery.length) {
+            clearInterval(interval);
+            timeout = setTimeout(() => {
+              isDeleting = true;
+              // Restart interval for deleting
+              interval = setInterval(() => {
+                charIndex -= 1;
+                setSearch(currentQuery.slice(0, charIndex));
+                if (charIndex <= 0) {
+                  clearInterval(interval);
+                  queryIndex = (queryIndex + 1) % queries.length;
+                  timeout = setTimeout(typeQuery, 500); // Wait 500ms before typing next
+                }
+              }, 75); // Deleting is usually faster
+            }, 2000); // Wait 2s before deleting
+          }
+        }
+      }, 115);
+    };
+
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (!entry.isIntersecting || interval) return;
-
-        setSearch('');
-        let index = 0;
-        interval = setInterval(() => {
-          index += 1;
-          setSearch(initialSearch.slice(0, index));
-
-          if (index >= initialSearch.length && interval) {
-            clearInterval(interval);
-            interval = undefined;
-          }
-        }, 115);
+        if (!entry.isIntersecting) return;
+        observer.disconnect(); // Only trigger once to start the typing loop
+        typeQuery();
       },
       { threshold: 0.45 },
     );
 
     observer.observe(root);
     return () => {
+      isMounted = false;
       observer.disconnect();
-      if (interval) clearInterval(interval);
+      clearInterval(interval);
+      clearTimeout(timeout);
     };
-  }, [autoType, initialSearch]);
+  }, [autoType, initialSearchKey]);
 
   const filteredResults = useMemo<SearchItem[]>(() => {
-    const query = search.trim().toLowerCase();
+    const query = (typeof search === 'string' ? search : '').trim().toLowerCase();
     if (query.length < 2) return [];
 
     return searchItems

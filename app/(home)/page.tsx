@@ -67,7 +67,7 @@ export default async function Page() {
         <Hero />
         <div className="flex flex-col z-2 px-4 size-full md:p-12 max-md:items-center max-md:text-center">
           <p className="mt-6 text-xs text-brand font-medium rounded-full p-2 border border-brand/50 w-fit">
-            Community-maintained, open-source AI knowledge.
+            Community Maintained, Open Sourced AI Knowledge.
           </p>
           <h1 className="text-4xl mt-8 mb-4 leading-tighter font-medium xl:text-5xl xl:mb-5">
             Every AI concept.
@@ -114,7 +114,7 @@ export default async function Page() {
         <Aesthetics />
         */}
 
-        <ForEngineers />
+        <ForEngineers searchItems={searchItems} />
       </div>
       <BooksSection />
     </main>
@@ -141,28 +141,55 @@ function Story() {
         className="absolute inset-0 size-full -z-1 pointer-events-none object-cover object-top rounded-2xl"
       />
 
-      <div className="w-full m-auto max-w-[500px] text-start shadow-xl p-2 bg-fd-card/80 backdrop-blur-md rounded-xl border shadow-black/50 dark:bg-fd-card/50">
-        <div className="pt-3 px-3">
+      <div className="w-full max-w-[520px] rounded-2xl border bg-fd-card/80 p-3 shadow-xl shadow-black/40 backdrop-blur-md">
+        <div className="space-y-4 px-4 py-3">
+          <div className="inline-flex rounded-full border bg-brand/10 px-3 py-1 text-xs font-medium text-brand">
+            AI Knowledge Directory
+          </div>
+
           <h2
             className={cn(
               headingVariants({
-                className: 'mb-4',
-                variant: 'h3',
-              }),
+                variant: 'h2',
+              })
             )}
           >
-            Concept Explorer
+            Learn Agentic AI
+            <br />
+            visually.
           </h2>
-          <p className="text-sm mb-4">
-            Open-source explainers turn new AI terms into visual, searchable learning paths.
+
+          <p className="max-w-md text-sm leading-6 text-fd-muted-foreground">
+            Explore modern AI concepts with diagrams, interactive explainers,
+            curated resources, and production architecture patterns—all in one
+            searchable handbook.
           </p>
-          <Link
-            href="/docs"
-            className={cn(buttonVariants({ variant: 'primary', className: 'text-sm py-2 mb-4' }))}
-          >
-            Open Handbook
-          </Link>
+
+          <div className="flex gap-3">
+            <Link
+              href="/docs"
+              className={cn(
+                buttonVariants({
+                  variant: 'primary',
+                })
+              )}
+            >
+              Browse Concepts
+            </Link>
+
+            <Link
+              href="/docs/search"
+              className={cn(
+                buttonVariants({
+                  variant: 'secondary',
+                })
+              )}
+            >
+              Search Docs
+            </Link>
+          </div>
         </div>
+
         <StoryControl />
       </div>
     </div>
@@ -284,7 +311,7 @@ function Feedback() {
   );
 }
 
-function ForEngineers() {
+function ForEngineers({ searchItems }: { searchItems: any[] }) {
   return (
     <>
       <h2
@@ -480,7 +507,7 @@ function ForEngineers() {
           <CompactBlogPostPreview compact />
         </div>
       </div>
-      <div className={cn(cardVariants(), 'flex flex-col max-md:pb-0')}>
+      <div className={cn(cardVariants(), 'flex flex-col max-md:pb-0 overflow-hidden')}>
         <h3 className={cn(headingVariants({ variant: 'h3', className: 'mb-6' }))}>
           Find new terms fast.
         </h3>
@@ -493,7 +520,16 @@ function ForEngineers() {
         >
           Search Library
         </Link>
-        <Search />
+        <div className="relative mt-auto -mr-16 -mb-16 mask-[linear-gradient(to_bottom_right,white_20%,transparent_90%)]">
+          <div className="w-[125%] min-w-[550px] h-[400px]">
+            <CognitiveSearchPanel
+              embedded
+              autoType
+              className="w-full h-full"
+              searchItems={searchItems}
+            />
+          </div>
+        </div>
       </div>
       <div className={cn(cardVariants(), 'flex flex-col p-0 overflow-hidden')}>
         <div className="p-6 mb-2">
