@@ -44,30 +44,31 @@ export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups
       sections[0],
     [pathname],
   );
-  const groupedPages = useMemo(
-    () =>
-      groups.map((group) => ({
-        group,
-        chapters: buildChapterTree(docs.filter((page) => page.group === group)),
-      })),
-    [groups, docs],
-  );
+  const sidebarTree = useMemo(() => buildSidebarTree(docs), [docs]);
 
   useEffect(() => {
-    const activeGroup = groupedPages.find(({ chapters }) =>
-      chapters.some((chapter) => isActiveNode(pathname, chapter)),
-    )?.group;
+    // Find active section
+    const activeSection = sidebarTree.find((section) => 
+      isActivePage(pathname, section.page.slug) || 
+      section.chapters.some(chapter => 
+        isActivePage(pathname, chapter.page.slug) || 
+        chapter.children.some(child => isActivePage(pathname, child.page.slug))
+      )
+    );
 
-    if (!activeGroup) return;
-    setOpenGroups((current) => ({ ...current, [activeGroup]: true }));
+    if (activeSection) {
+      setOpenGroups((current) => ({ ...current, [activeSection.page.slug[0]]: true }));
 
-    const activeChapter = groupedPages
-      .flatMap(({ chapters }) => chapters)
-      .find((chapter) => isActiveNode(pathname, chapter));
-    if (activeChapter) {
-      setOpenChapters((current) => ({ ...current, [activeChapter.page.slug.join('/')]: true }));
+      // Find active chapter
+      const activeChapter = activeSection.chapters.find((chapter) => 
+        isActivePage(pathname, chapter.page.slug) || 
+        chapter.children.some(child => isActivePage(pathname, child.page.slug))
+      );
+      if (activeChapter) {
+        setOpenChapters((current) => ({ ...current, [activeChapter.page.slug.join('/')]: true }));
+      }
     }
-  }, [groupedPages, pathname]);
+  }, [sidebarTree, pathname]);
 
   return (
     <aside
@@ -89,6 +90,7 @@ export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups
             </button>
           </div>
           <CognitiveSearchTrigger searchItems={searchItems} />
+          {/* Note: Kept the Switcher UI untouched for future extensions. It currently acts as a global quick link menu. */}
           <div className="relative">
             <button
               onClick={() => setOpen((value) => !value)}
@@ -156,26 +158,41 @@ export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups
           </div>
         </div>
         <nav className="flex-1 space-y-1.5 pt-2">
-          {groupedPages.map(({ group, chapters }) => {
-            const activeGroup = chapters.some((chapter) => isActiveNode(pathname, chapter));
-            const expanded = openGroups[group] ?? activeGroup ?? group === 'Start Here';
+          {sidebarTree.map((sectionNode) => {
+            const groupSlug = sectionNode.page.slug[0];
+            const activeGroup = 
+              isActivePage(pathname, sectionNode.page.slug) || 
+              sectionNode.chapters.some(chapter => 
+                isActivePage(pathname, chapter.page.slug) || 
+                chapter.children.some(child => isActivePage(pathname, child.page.slug))
+              );
+            const expanded = openGroups[groupSlug] ?? activeGroup;
 
-            if (chapters.length === 0) {
+            if (sectionNode.chapters.length === 0) {
               return (
-                <div key={group}>
-                  <p className="px-2 text-xs font-semibold text-fd-muted-foreground/75 tracking-wider uppercase">{group}</p>
+                <div key={groupSlug} className="rounded-lg">
+                  <Link
+                    href={`/docs/${sectionNode.page.slug.join('/')}`}
+                    className={cn(
+                      'flex min-h-8 w-full items-center gap-2 rounded-lg border border-transparent px-2.5 py-1 text-start text-[0.75rem] font-bold uppercase tracking-wide transition-colors hover:border-fd-border hover:bg-fd-accent/70 hover:text-fd-accent-foreground cursor-pointer',
+                      activeGroup ? 'border-fd-border bg-fd-accent text-fd-accent-foreground shadow-sm' : 'text-fd-foreground',
+                    )}
+                  >
+                    <BookOpen className="size-3.5 shrink-0 text-fd-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{formatGroupTitle(sectionNode.page.title)}</span>
+                  </Link>
                 </div>
               );
             }
 
             return (
-              <div key={group} className="rounded-lg">
+              <div key={groupSlug} className="rounded-lg">
                 <button
                   type="button"
                   onClick={() =>
                     setOpenGroups((current) => ({
                       ...current,
-                      [group]: !(current[group] ?? activeGroup ?? group === 'Start Here'),
+                      [groupSlug]: !(current[groupSlug] ?? activeGroup),
                     }))
                   }
                   className={cn(
@@ -184,9 +201,9 @@ export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups
                   )}
                 >
                   <BookOpen className="size-3.5 shrink-0 text-fd-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">{formatGroupTitle(group)}</span>
+                  <span className="min-w-0 flex-1 truncate">{formatGroupTitle(sectionNode.page.title)}</span>
                   <span className="rounded bg-fd-secondary px-1.5 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-fd-muted-foreground">
-                    {chapters.length}
+                    {sectionNode.chapters.length}
                   </span>
                   <ChevronRight
                     className={cn('size-3.5 shrink-0 text-fd-muted-foreground transition-transform', expanded && 'rotate-90')}
@@ -194,20 +211,27 @@ export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups
                 </button>
                 {expanded ? (
                   <div className="ms-3 mt-1.5 space-y-1 border-s border-fd-border/75 ps-2">
-                    {chapters.map((chapter) => (
-                      <ChapterNavItem
-                        key={chapter.page.slug.join('/')}
-                        chapter={chapter}
-                        pathname={pathname}
-                        expanded={openChapters[chapter.page.slug.join('/')] ?? isActiveNode(pathname, chapter)}
-                        onToggle={() =>
-                          setOpenChapters((current) => ({
-                            ...current,
-                            [chapter.page.slug.join('/')]: !(current[chapter.page.slug.join('/')] ?? isActiveNode(pathname, chapter)),
-                          }))
-                        }
-                      />
-                    ))}
+                    {sectionNode.chapters.map((chapter) => {
+                      const chapterSlug = chapter.page.slug.join('/');
+                      const isChapterActive = 
+                        isActivePage(pathname, chapter.page.slug) || 
+                        chapter.children.some(child => isActivePage(pathname, child.page.slug));
+                      
+                      return (
+                        <ChapterNavItem
+                          key={chapterSlug}
+                          chapter={chapter}
+                          pathname={pathname}
+                          expanded={openChapters[chapterSlug] ?? isChapterActive}
+                          onToggle={() =>
+                            setOpenChapters((current) => ({
+                              ...current,
+                              [chapterSlug]: !(current[chapterSlug] ?? isChapterActive),
+                            }))
+                          }
+                        />
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>
@@ -233,11 +257,6 @@ export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups
   );
 }
 
-type ChapterNode = {
-  page: any;
-  children: any[];
-};
-
 function ChapterNavItem({
   chapter,
   pathname,
@@ -251,7 +270,7 @@ function ChapterNavItem({
 }) {
   const href = `/docs/${chapter.page.slug.join('/')}`;
   const active = isActivePage(pathname, chapter.page.slug);
-  const activeChild = chapter.children.some((child) => isActivePage(pathname, child.slug));
+  const activeChild = chapter.children.some((child) => isActivePage(pathname, child.page.slug));
   const hasChildren = chapter.children.length > 0;
 
   if (!hasChildren) {
@@ -288,8 +307,8 @@ function ChapterNavItem({
       {expanded ? (
         <div className="ms-3 mt-1.5 space-y-1 border-s border-dashed border-fd-border/70 ps-3">
           {chapter.children.map((child) => (
-            <Link key={child.slug.join('/')} href={`/docs/${child.slug.join('/')}`} className={navLinkClass(isActivePage(pathname, child.slug), true)}>
-              {cleanTitle(child.title)}
+            <Link key={child.page.slug.join('/')} href={`/docs/${child.page.slug.join('/')}`} className={navLinkClass(isActivePage(pathname, child.page.slug), true)}>
+              {cleanTitle(child.page.title)}
             </Link>
           ))}
         </div>
@@ -300,19 +319,40 @@ function ChapterNavItem({
 
 function isActivePage(pathname: string, slug: string[]) {
   const href = `/docs/${slug.join('/')}`;
-  return pathname === href || (pathname === '/docs' && slug.join('/') === 'overview');
+  return pathname === href || (pathname === '/docs' && slug.length === 1 && slug[0] === 'overview');
 }
 
-function isActiveNode(pathname: string, node: ChapterNode) {
-  return isActivePage(pathname, node.page.slug) || node.children.some((child) => isActivePage(pathname, child.slug));
-}
+type SubchapterNode = {
+  page: any;
+};
 
-function buildChapterTree(pages: any[]): ChapterNode[] {
-  const chapters = pages.filter((page) => !page.parentSlug);
-  return chapters.map((page) => ({
-    page,
-    children: pages.filter((candidate) => candidate.parentSlug?.join('/') === page.slug.join('/')),
-  }));
+type ChapterNode = {
+  page: any;
+  children: SubchapterNode[];
+};
+
+type SectionNode = {
+  page: any;
+  chapters: ChapterNode[];
+};
+
+function buildSidebarTree(docs: any[]): SectionNode[] {
+  const sections = docs.filter(p => p.slug.length === 1);
+  return sections.map(sectionPage => {
+    const chaptersForSection = docs.filter(p => p.slug.length === 2 && p.slug[0] === sectionPage.slug[0]);
+    
+    return {
+      page: sectionPage,
+      chapters: chaptersForSection.map(chapterPage => {
+        const subchaptersForChapter = docs.filter(p => p.slug.length === 3 && p.slug[0] === chapterPage.slug[0] && p.slug[1] === chapterPage.slug[1]);
+        
+        return {
+          page: chapterPage,
+          children: subchaptersForChapter.map(p => ({ page: p }))
+        };
+      })
+    };
+  });
 }
 
 function navLinkClass(active: boolean, child = false) {
