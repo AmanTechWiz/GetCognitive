@@ -98,7 +98,7 @@ export function SiteHeader() {
             />
             <ThemeToggle />
             <a
-              href="https://github.com/fuma-nama/fumadocs"
+              href="https://github.com/FirePheonix/cognitive"
               target="_blank"
               rel="noreferrer noopener"
               aria-label="Github"

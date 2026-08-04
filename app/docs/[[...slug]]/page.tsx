@@ -15,12 +15,17 @@ import { docPages, getDocBySlug, type DocPage } from '@/content/docs/docs-server
 import { DocsDesktopToc, DocsMobileToc } from '@/components/docs/toc';
 import { cn } from '@/lib/cn';
 
+import { redirect } from 'next/navigation';
+
 export default async function DocsPage({
   params,
 }: {
   params: Promise<{ slug?: string[] }>;
 }) {
   const { slug = [] } = await params;
+  if (slug.length === 0) {
+    redirect('/docs/part-i-foundations/chapter-1-from-prompt-to-production/11-the-lifecycle-of-an-ai-request');
+  }
   const page = getDocBySlug(slug);
 
   if (!page) {

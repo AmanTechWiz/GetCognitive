@@ -22,8 +22,9 @@ const footerGroups = [
   {
     title: 'Community',
     links: [
-      { href: 'https://github.com/fuma-nama/fumadocs', label: 'GitHub' },
-      { href: 'https://www.linkedin.com', label: 'LinkedIn' },
+      { href: 'https://github.com/FirePheonix/cognitive', label: 'GitHub' },
+      { href: 'https://x.com/shubhamm069', label: 'X' },
+      { href: 'https://www.linkedin.com/in/shubham-singh-8a5643198/', label: 'LinkedIn' },
     ],
   },
 ];
@@ -62,14 +63,23 @@ export function SiteFooter() {
             </p>
             <div className="flex gap-2">
               <a
-                href="https://github.com/fuma-nama/fumadocs"
+                href="https://github.com/FirePheonix/cognitive"
                 aria-label="GitHub"
                 className="inline-flex size-9 items-center justify-center rounded-lg border bg-fd-background text-fd-muted-foreground transition-colors hover:text-fd-foreground"
               >
                 <GithubMark className="size-4" />
               </a>
               <a
-                href="https://www.linkedin.com"
+                href="https://x.com/shubhamm069"
+                aria-label="X (Twitter)"
+                className="inline-flex size-9 items-center justify-center rounded-lg border bg-fd-background text-fd-muted-foreground transition-colors hover:text-fd-foreground"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" className="size-4">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+              </a>
+              <a
+                href="https://www.linkedin.com/in/shubham-singh-8a5643198/"
                 aria-label="LinkedIn"
                 className="inline-flex size-9 items-center justify-center rounded-lg border bg-fd-background text-fd-muted-foreground transition-colors hover:text-fd-foreground"
               >

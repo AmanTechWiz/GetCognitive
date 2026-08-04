@@ -106,7 +106,7 @@ const DEMO_BOOKS: BookCfg[] = [
     author: "Cognitive",
     year: "2024",
     stars: 5,
-    desc: "Deep dive into the architecture, training, and deployment of neural networks across various domains.",
+    desc: "Focused material for learning neural networks.",
     spineBg: "#f0f0f0",
     spineInk: "#000000",
     spineFont: "700 42px sans-serif",
@@ -1681,9 +1681,11 @@ export function BooksScene({
       <canvas ref={canvasRef} className="absolute inset-0 z-[2] block h-full w-full touch-none" />
 
       {showNav && (
-        <nav className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-center justify-between px-[42px] py-[26px] max-[760px]:px-5 max-[760px]:py-[18px]">
+        <nav className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-center justify-between px-[42px] py-[26px] max-[760px]:px-5 max-[760px]:py-[18px] transition-opacity duration-300 ${
+          uiMode === 'detail' || uiMode === 'opening' ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        }`}>
           <div className="pointer-events-auto text-[clamp(20px,2.2vw,29px)] font-extrabold tracking-[-0.01em] text-[#1b1b1b] dark:text-[#fafafa]">
-            Bestsellers
+            Focused Study Materials
           </div>
         </nav>
       )}
@@ -1771,26 +1773,8 @@ export function BooksScene({
           <div
             className={`pointer-events-auto mt-8 inline-flex items-center gap-[10px] rounded-full bg-[#1a2140] p-[10px] shadow-[0_24px_60px_rgba(0,0,0,0.45)] max-[760px]:mt-[18px] max-[760px]:flex-wrap max-[760px]:rounded-[28px] ${dpChild(330)}`}
           >
-            <button className="inline-flex h-[54px] items-center gap-[10px] rounded-full bg-[var(--bs-cream)] px-[26px] text-[16.5px] font-semibold text-[var(--bs-navy)] transition-[transform,filter] duration-[220ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.04] hover:brightness-105 max-[760px]:h-12 max-[760px]:px-5 max-[760px]:text-[15px]">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-5 w-5">
-                <circle cx="12" cy="12" r="9" />
-                <path d="M3 12h18M12 3c2.8 2.6 2.8 15.4 0 18M12 3c-2.8 2.6-2.8 15.4 0 18" />
-              </svg>
-              <span>English</span>
-            </button>
-            <button className="inline-flex h-[54px] items-center gap-[10px] rounded-full bg-[var(--bs-peri)] px-[26px] text-[16.5px] font-semibold text-[#10152c] transition-[transform,filter] duration-[220ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.04] hover:brightness-105 max-[760px]:h-12 max-[760px]:px-5 max-[760px]:text-[15px]">
-              Buy Now
-            </button>
-            <button className="inline-flex h-[54px] items-center gap-[10px] rounded-full bg-[var(--bs-peri)] px-[26px] text-[16.5px] font-semibold text-[#10152c] transition-[transform,filter] duration-[220ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.04] hover:brightness-105 max-[760px]:h-12 max-[760px]:px-5 max-[760px]:text-[15px]">
-              Buy Audiobook
-            </button>
-            <button
-              aria-label="Save"
-              className="inline-flex h-[54px] w-[54px] items-center justify-center gap-[10px] rounded-full bg-[#242c50] px-0 text-[var(--bs-lav)] transition-[transform,filter] duration-[220ms] ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.04] hover:brightness-105"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} className="h-5 w-5">
-                <path d="M7 3h10v18l-5-4-5 4z" />
-              </svg>
+            <button disabled className="inline-flex h-[54px] items-center gap-[10px] rounded-full bg-[var(--bs-peri)]/20 border border-[var(--bs-peri)]/30 px-[32px] text-[16.5px] font-semibold text-[var(--bs-lav)] max-[760px]:h-12 max-[760px]:px-6 max-[760px]:text-[15px] cursor-not-allowed">
+              Coming Soon
             </button>
           </div>
         </div>

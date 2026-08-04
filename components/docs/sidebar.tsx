@@ -241,7 +241,7 @@ export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups
         <div className="sticky bottom-0 mt-8 bg-fd-card pt-4">
           <div className="flex items-center rounded-lg border bg-fd-secondary/50 p-0.5 pe-0 text-fd-muted-foreground">
             <a
-              href="https://github.com/fuma-nama/fumadocs"
+              href="https://github.com/FirePheonix/cognitive"
               target="_blank"
               rel="noreferrer noopener"
               aria-label="Github"

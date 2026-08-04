@@ -19,7 +19,6 @@ import {
   ConceptFlowDiagram,
   OrangeDitheredBackground,
 } from '@/app/(home)/page.client';
-import StoryImage from './story.png';
 import Bg2Image from './bg-2.png';
 import { StoryControl } from '@/components/story-control';
 import { BooksScene } from '@/components/books-scene';
@@ -127,7 +126,7 @@ function BooksSection() {
   return (
     <section className="relative mx-auto mt-10 w-full max-w-[1400px] overflow-hidden rounded-2xl border bg-[#020604] p-2 shadow-2xl shadow-green-950/30">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,197,94,0.24),transparent_42%),linear-gradient(135deg,rgba(2,6,4,0.75),rgba(5,25,13,0.45))]" />
-      <div className="relative h-[760px] w-full rounded-xl border border-white/10 bg-black max-md:h-[640px]">
+      <div className="relative h-[760px] w-full rounded-xl border border-white/10 bg-black max-md:h-[720px]">
         <BooksScene />
       </div>
     </section>
@@ -138,8 +137,9 @@ function Story() {
   return (
     <div className="relative col-span-full min-h-[570px] px-2 py-6 rounded-2xl z-2 border shadow-md">
       <Image
-        src={StoryImage}
+        src="/learn-visually-bg.png"
         alt=""
+        fill
         className="absolute inset-0 size-full -z-1 pointer-events-none object-cover object-top rounded-2xl"
       />
 
@@ -501,7 +501,7 @@ function ForEngineers({ searchItems }: { searchItems: any[] }) {
           ))}
         </div>
 
-        <div className="absolute bottom-8 right-4 w-[70%] shadow-lg shadow-black">
+        <div className="absolute bottom-8 right-4 w-[80%] shadow-lg shadow-black">
           <CompactBlogPostPreview compact />
         </div>
       </div>
@@ -552,44 +552,22 @@ const searchItemVariants = cva('rounded-md p-2 text-sm text-fd-popover-foregroun
 
 function CompactBlogPostPreview({ compact = false }: { compact?: boolean }) {
   return (
-    <article
-      className={cn(
-        'overflow-hidden rounded-xl border border-brand/20 bg-fd-card/90 text-fd-foreground shadow-xl backdrop-blur-md',
-        compact && 'bg-neutral-50/90 text-neutral-900 dark:bg-neutral-950/90 dark:text-neutral-100',
-      )}
-    >
-      <div className="border-b border-fd-border/70 px-4 py-3">
-        <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-brand">
-          Cognitive Blog
-        </p>
-      </div>
-      <div className={cn('p-4', compact ? 'space-y-3' : 'space-y-4')}>
-        <div className="flex flex-wrap gap-2 text-[11px] text-fd-muted-foreground">
-          <span>Agentic Retrieval</span>
-          <span>•</span>
-          <span>Updated weekly</span>
-          <span>•</span>
-          <span>5 min read</span>
-        </div>
-        <h4 className={cn('font-semibold tracking-tight', compact ? 'text-xl' : 'text-2xl')}>
-          How agentic retrieval changes AI search
-        </h4>
-        <p className={cn('text-fd-muted-foreground', compact ? 'text-sm leading-6' : 'text-sm leading-6')}>
-          Modern AI systems do more than fetch documents. They plan searches, inspect evidence,
-          compare sources, and decide when the answer is reliable enough to cite.
-        </p>
-        <div className="grid gap-2 text-xs sm:grid-cols-3">
-          {['Plan', 'Inspect', 'Cite'].map((item) => (
-            <span
-              key={item}
-              className="rounded-lg border border-brand/25 bg-brand/10 px-3 py-2 text-brand"
-            >
-              {item}
-            </span>
-          ))}
-        </div>
-      </div>
-    </article>
+    <div className="relative overflow-hidden rounded-xl">
+      <Image
+        src="/searched-component.png"
+        alt="Cognitive blog preview"
+        width={400}
+        height={260}
+        className="block dark:hidden w-full h-auto object-cover"
+      />
+      <Image
+        src="/searched-component-dark.png"
+        alt="Cognitive blog preview"
+        width={400}
+        height={260}
+        className="hidden dark:block w-full h-auto object-cover"
+      />
+    </div>
   );
 }
 
