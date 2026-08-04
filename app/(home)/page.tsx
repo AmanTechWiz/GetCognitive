@@ -16,6 +16,8 @@ import {
   AgnosticBackground,
   PreviewImages,
   SecondSectionBackdrop,
+  ConceptFlowDiagram,
+  OrangeDitheredBackground,
 } from '@/app/(home)/page.client';
 import StoryImage from './story.png';
 import Bg2Image from './bg-2.png';
@@ -480,11 +482,7 @@ function ForEngineers({ searchItems }: { searchItems: any[] }) {
       <div
         className={cn(cardVariants({ className: 'relative overflow-hidden min-h-[400px] z-2' }))}
       >
-        <Image
-          src={Bg2Image}
-          alt=""
-          className="absolute inset-0 size-full object-cover object-top -z-1"
-        />
+        <OrangeDitheredBackground />
         <div className="absolute top-8 left-4 w-[70%] flex flex-col bg-neutral-50/80 backdrop-blur-lg border text-neutral-800 p-2 rounded-xl shadow-lg shadow-black dark:bg-neutral-900/80 dark:text-neutral-200">
           <p className="px-2 pb-2 font-medium border-b mb-2 text-neutral-500 dark:text-neutral-400">
             Cognitive Library
@@ -595,27 +593,6 @@ function CompactBlogPostPreview({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function ConceptFlowDiagram() {
-  return (
-    <div className="mt-auto grid gap-3 border-t bg-black p-6 text-emerald-50">
-      {[
-        ['new term', 'Agentic Retrieval'],
-        ['explain', 'Search + inspect + rerank'],
-        ['connect', 'RAG → Agents → Evaluation'],
-      ].map(([label, value], index) => (
-        <div key={label} className="flex items-center gap-3">
-          <span className="grid size-8 place-items-center rounded-full border border-brand/40 bg-brand/10 font-mono text-[11px] text-brand">
-            {index + 1}
-          </span>
-          <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 p-3">
-            <p className="text-[10px] uppercase tracking-[0.24em] text-emerald-300/70">{label}</p>
-            <p className="mt-1 text-sm font-medium">{value}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function Search() {
   return (

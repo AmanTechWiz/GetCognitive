@@ -19,8 +19,10 @@ import NotebookImg from './notebook.png';
 import { cva } from 'class-variance-authority';
 import AgentHeroImage from './agent-hero.png';
 import SecondSectionBg from './2nd-section-bg.png';
+import Greek2Image from './assets/greek-2.webp';
 import { useTheme } from 'next-themes';
 import dynamic from 'next/dynamic';
+import { ArrowRight } from 'lucide-react';
 
 function createSafeShaderComponent(loader: () => Promise<any>) {
   const component = dynamic(
@@ -419,4 +421,238 @@ function useIsVisible(ref: RefObject<HTMLElement | null>) {
   }, [ref]);
 
   return visible;
+}
+
+export function ConceptFlowDiagram() {
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTick((t) => t + 1);
+    }, 1200);
+    return () => clearInterval(interval);
+  }, []);
+
+  const activeStep = Math.floor(tick / 3) % 3;
+  const subStep = tick % 3;
+
+  return (
+    <div className="mt-auto flex flex-col gap-6 border-t bg-black p-8 text-emerald-50 relative overflow-hidden select-none">
+      {/* Background grid pattern or glow */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+      <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-64 h-64 bg-brand/5 rounded-full blur-[100px] pointer-events-none" />
+
+      <div className="relative flex flex-col gap-8">
+        {/* Step 1 */}
+        <div className="relative flex items-start gap-4 z-10">
+          <span 
+            className={cn(
+              "grid size-9 shrink-0 place-items-center rounded-full border font-mono text-xs transition-all duration-500",
+              activeStep === 0 
+                ? "border-brand bg-brand/20 text-brand scale-110 shadow-[0_0_15px_rgba(34,197,94,0.3)]" 
+                : "border-white/10 bg-white/5 text-emerald-50/40"
+            )}
+          >
+            1
+          </span>
+          <div 
+            className={cn(
+              "min-w-0 flex-1 rounded-xl border p-4 transition-all duration-500 bg-white/5",
+              activeStep === 0 
+                ? "border-brand/40 bg-white/10 shadow-[0_0_20px_rgba(34,197,94,0.08)] translate-x-2" 
+                : "border-white/10"
+            )}
+          >
+            <p className={cn(
+              "text-[10px] uppercase tracking-[0.24em] transition-colors duration-500",
+              activeStep === 0 ? "text-brand" : "text-emerald-300/40"
+            )}>
+              new term
+            </p>
+            <div className="mt-1 flex items-center gap-2">
+              <span className="text-sm font-semibold tracking-tight">Agentic Retrieval</span>
+              {activeStep === 0 && (
+                <span className="w-1.5 h-3.5 bg-brand animate-pulse" />
+              )}
+            </div>
+          </div>
+          {/* Connector Line */}
+          <div className="absolute left-[17px] top-9 w-[2px] h-[36px] bg-white/5 pointer-events-none">
+            <div 
+              className={cn(
+                "absolute w-full bg-brand shadow-[0_0_8px_var(--brand)] transition-all duration-1000 ease-in-out",
+                activeStep === 0 ? "h-full top-0" : "h-0 top-full"
+              )}
+            />
+          </div>
+        </div>
+
+        {/* Step 2 */}
+        <div className="relative flex items-start gap-4 z-10">
+          <span 
+            className={cn(
+              "grid size-9 shrink-0 place-items-center rounded-full border font-mono text-xs transition-all duration-500",
+              activeStep === 1 
+                ? "border-brand bg-brand/20 text-brand scale-110 shadow-[0_0_15px_rgba(34,197,94,0.3)]" 
+                : "border-white/10 bg-white/5 text-emerald-50/40"
+            )}
+          >
+            2
+          </span>
+          <div 
+            className={cn(
+              "min-w-0 flex-1 rounded-xl border p-4 transition-all duration-500 bg-white/5",
+              activeStep === 1 
+                ? "border-brand/40 bg-white/10 shadow-[0_0_20px_rgba(34,197,94,0.08)] translate-x-2" 
+                : "border-white/10"
+            )}
+          >
+            <p className={cn(
+              "text-[10px] uppercase tracking-[0.24em] transition-colors duration-500",
+              activeStep === 1 ? "text-brand" : "text-emerald-300/40"
+            )}>
+              explain
+            </p>
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {[
+                { name: 'Search', desc: 'Scan index' },
+                { name: 'Inspect', desc: 'Eval docs' },
+                { name: 'Rerank', desc: 'Sort matches' }
+              ].map((sub, idx) => {
+                const isSubActive = activeStep === 1 && subStep === idx;
+                return (
+                  <div 
+                    key={sub.name}
+                    className={cn(
+                      "flex flex-col rounded-lg border px-2.5 py-1.5 transition-all duration-300 min-w-[70px]",
+                      isSubActive 
+                        ? "bg-brand/10 border-brand/40 text-brand scale-105 shadow-[0_0_10px_rgba(34,197,94,0.15)]"
+                        : "bg-white/5 border-white/5 text-emerald-50/50"
+                    )}
+                  >
+                    <span className="text-xs font-semibold">{sub.name}</span>
+                    <span className={cn(
+                      "text-[9px] mt-0.5",
+                      isSubActive ? "text-brand/80" : "text-emerald-50/30"
+                    )}>{sub.desc}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* Connector Line */}
+          <div className="absolute left-[17px] top-9 w-[2px] h-[36px] bg-white/5 pointer-events-none">
+            <div 
+              className={cn(
+                "absolute w-full bg-brand shadow-[0_0_8px_var(--brand)] transition-all duration-1000 ease-in-out",
+                activeStep === 1 ? "h-full top-0" : "h-0 top-full"
+              )}
+            />
+          </div>
+        </div>
+
+        {/* Step 3 */}
+        <div className="relative flex items-start gap-4 z-10">
+          <span 
+            className={cn(
+              "grid size-9 shrink-0 place-items-center rounded-full border font-mono text-xs transition-all duration-500",
+              activeStep === 2 
+                ? "border-brand bg-brand/20 text-brand scale-110 shadow-[0_0_15px_rgba(34,197,94,0.3)]" 
+                : "border-white/10 bg-white/5 text-emerald-50/40"
+            )}
+          >
+            3
+          </span>
+          <div 
+            className={cn(
+              "min-w-0 flex-1 rounded-xl border p-4 transition-all duration-500 bg-white/5",
+              activeStep === 2 
+                ? "border-brand/40 bg-white/10 shadow-[0_0_20px_rgba(34,197,94,0.08)] translate-x-2" 
+                : "border-white/10"
+            )}
+          >
+            <p className={cn(
+              "text-[10px] uppercase tracking-[0.24em] transition-colors duration-500",
+              activeStep === 2 ? "text-brand" : "text-emerald-300/40"
+            )}>
+              connect
+            </p>
+            <div className="mt-3 flex items-center justify-between gap-1 text-[11px]">
+              {[
+                { label: 'RAG', desc: 'Context' },
+                { label: 'Agents', desc: 'Execution' },
+                { label: 'Evaluation', desc: 'Validation' }
+              ].map((item, idx) => {
+                const isSubActive = activeStep === 2 && subStep === idx;
+                return (
+                  <div key={item.label} className="flex items-center flex-1">
+                    <div 
+                      className={cn(
+                        "flex flex-col items-center flex-1 rounded-lg border py-1 px-1.5 transition-all duration-300",
+                        isSubActive 
+                          ? "bg-brand/10 border-brand/40 text-brand scale-105 shadow-[0_0_10px_rgba(34,197,94,0.15)]"
+                          : "bg-white/5 border-white/5 text-emerald-50/50"
+                      )}
+                    >
+                      <span className="font-semibold">{item.label}</span>
+                      <span className={cn(
+                        "text-[8px] mt-0.5",
+                        isSubActive ? "text-brand/80" : "text-emerald-50/30"
+                      )}>{item.desc}</span>
+                    </div>
+                    {idx < 2 && (
+                      <ArrowRight className={cn(
+                        "size-3 mx-1 shrink-0 transition-colors duration-300",
+                        (activeStep === 2 && subStep >= idx) ? "text-brand" : "text-emerald-50/20"
+                      )} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function OrangeDitheredBackground() {
+  const { resolvedTheme } = useTheme();
+  const [showShader, setShowShader] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowShader(true), 250);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <>
+      <Image
+        src={Greek2Image}
+        alt=""
+        fill
+        className="absolute inset-0 size-full object-cover object-top -z-1 opacity-55 saturate-50 dark:opacity-45"
+      />
+      {showShader && (
+        <ImageDithering
+          image={Greek2Image.src}
+          width="100%"
+          height="100%"
+          fit="cover"
+          scale={1}
+          colorBack="#00000000"
+          colorFront={resolvedTheme === 'dark' ? '#140802' : '#230e03'}
+          colorHighlight={resolvedTheme === 'dark' ? '#ff6c00' : '#e65c00'}
+          type="4x4"
+          size={6}
+          colorSteps={2}
+          originalColors={false}
+          className="absolute inset-0 opacity-95 mix-blend-screen pointer-events-none -z-1"
+          minPixelRatio={1}
+          maxPixelCount={1280 * 720}
+        />
+      )}
+    </>
+  );
 }
