@@ -18,10 +18,9 @@ import {
   SecondSectionBackdrop,
   ConceptFlowDiagram,
   OrangeDitheredBackground,
+  BooksSceneClient,
+  StorySection,
 } from '@/app/(home)/page.client';
-import Bg2Image from './bg-2.png';
-import { StoryControl } from '@/components/story-control';
-import { BooksScene } from '@/components/books-scene';
 
 const headingVariants = cva('font-medium tracking-tight', {
   variants: {
@@ -63,7 +62,7 @@ export default async function Page() {
   const docs = getAllDocs();
   const searchItems = getSearchItems(docs);
   return (
-    <main className="text-landing-foreground pt-4 pb-6 dark:text-landing-foreground-dark md:pb-12">
+    <main className="text-landing-foreground pt-4 pb-6 dark:text-landing-foreground-dark md:pb-12 overflow-x-clip max-w-full">
       <div className="relative flex min-h-[600px] h-[70vh] max-h-[900px] border rounded-2xl overflow-hidden mx-auto w-full max-w-[1400px] bg-origin-border">
         <Hero />
         <div className="flex flex-col z-2 px-4 size-full md:p-12 max-md:items-center max-md:text-center">
@@ -115,7 +114,7 @@ export default async function Page() {
         <Aesthetics />
         */}
 
-        <ForEngineers searchItems={searchItems} />
+        <ForEngineers searchItems={searchItems} docs={docs} />
       </div>
       <BooksSection />
     </main>
@@ -127,76 +126,13 @@ function BooksSection() {
     <section className="relative mx-auto mt-10 w-full max-w-[1400px] overflow-hidden rounded-2xl border bg-[#020604] p-2 shadow-2xl shadow-green-950/30">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,197,94,0.24),transparent_42%),linear-gradient(135deg,rgba(2,6,4,0.75),rgba(5,25,13,0.45))]" />
       <div className="relative h-[760px] w-full rounded-xl border border-white/10 bg-black max-md:h-[720px]">
-        <BooksScene />
+        <BooksSceneClient />
       </div>
     </section>
   );
 }
 
-function Story() {
-  return (
-    <div className="relative col-span-full min-h-[570px] px-2 py-6 rounded-2xl z-2 border shadow-md">
-      <Image
-        src="/learn-visually-bg.png"
-        alt=""
-        fill
-        className="absolute inset-0 size-full -z-1 pointer-events-none object-cover object-top rounded-2xl"
-      />
 
-      <div className="w-full max-w-[520px] rounded-2xl border bg-fd-card/80 p-3 shadow-xl shadow-black/40 backdrop-blur-md">
-        <div className="space-y-4 px-4 py-3">
-          <div className="inline-flex rounded-full border bg-brand/10 px-3 py-1 text-xs font-medium text-brand">
-            AI Knowledge Directory
-          </div>
-
-          <h2
-            className={cn(
-              headingVariants({
-                variant: 'h2',
-              })
-            )}
-          >
-            Learn Agentic AI
-            <br />
-            visually.
-          </h2>
-
-          <p className="max-w-md text-sm leading-6 text-fd-muted-foreground">
-            Explore modern AI concepts with diagrams, interactive explainers,
-            curated resources, and production architecture patterns—all in one
-            searchable handbook.
-          </p>
-
-          <div className="flex gap-3">
-            <Link
-              href="/docs"
-              className={cn(
-                buttonVariants({
-                  variant: 'primary',
-                })
-              )}
-            >
-              Browse Concepts
-            </Link>
-
-            <Link
-              href="/docs/search"
-              className={cn(
-                buttonVariants({
-                  variant: 'secondary',
-                })
-              )}
-            >
-              Search Docs
-            </Link>
-          </div>
-        </div>
-
-        <StoryControl />
-      </div>
-    </div>
-  );
-}
 
 function Aesthetics() {
   return (
@@ -313,20 +249,10 @@ function Feedback() {
   );
 }
 
-function ForEngineers({ searchItems }: { searchItems: any[] }) {
+function ForEngineers({ searchItems, docs }: { searchItems: any[]; docs: any[] }) {
   return (
     <>
-      <h2
-        className={cn(
-          headingVariants({
-            variant: 'h2',
-            className: 'text-brand text-center mb-4 col-span-full',
-          }),
-        )}
-      >
-        Learn AI Systems as They Evolve.
-      </h2>
-      <Story />
+      <StorySection searchItems={searchItems} docs={docs} />
 
       <div className={cn(cardVariants(), 'relative flex flex-col overflow-hidden z-2')}>
         <h3

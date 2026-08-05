@@ -1,6 +1,8 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { marked } from 'marked';
 import {
+  Calendar,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -10,10 +12,13 @@ import {
   MoreHorizontal,
   ThumbsDown,
   ThumbsUp,
+  User,
 } from 'lucide-react';
 import { docPages, getDocBySlug, type DocPage } from '@/content/docs/docs-server';
 import { DocsDesktopToc, DocsMobileToc } from '@/components/docs/toc';
 import { cn } from '@/lib/cn';
+import { MermaidInitializer } from '@/components/mermaid-initializer';
+import { DocAudioPlayer } from '@/components/doc-audio-player';
 
 import { redirect } from 'next/navigation';
 
@@ -63,27 +68,75 @@ export default async function DocsPage({
             <span>{page.group}</span>
           </nav>
 
-          <h1 className="text-[1.75em] font-semibold tracking-tight">{page.title}</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-fd-foreground md:text-4xl">
+            {page.title}
+          </h1>
+
           {page.description ? (
-            <p className="mb-8 mt-2 text-lg text-fd-muted-foreground">{page.description}</p>
+            <p className="mt-3 text-lg leading-relaxed text-fd-muted-foreground">
+              {page.description}
+            </p>
           ) : null}
 
-          <div className="mb-4 flex flex-row flex-wrap items-center gap-2 border-b pb-6">
+          {/* Meta Line */}
+          {(page.author || page.lastUpdatedDate) && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-fd-muted-foreground">
+              {page.author && (
+                <>
+                  {page.authorSocials ? (
+                    <a
+                      href={page.authorSocials}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-fd-foreground hover:text-brand transition-colors"
+                    >
+                      {page.author}
+                    </a>
+                  ) : (
+                    <span className="font-medium text-fd-foreground">{page.author}</span>
+                  )}
+                </>
+              )}
+
+              {page.author && page.lastUpdatedDate && <span>·</span>}
+
+              {page.lastUpdatedDate && <span>Updated {page.lastUpdatedDate}</span>}
+
+              {page.group && (
+                <>
+                  <span>·</span>
+                  <span>{page.group}</span>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Controls Bar: Sleek Audio Pill + Action Buttons inline */}
+          <div className="mt-4 mb-6 flex flex-wrap items-center gap-2.5">
+            {page.audio && <DocAudioPlayer src={page.audio} />}
+
             <ActionButton>
               <Copy className="size-3.5" />
-              Copy Markdown
+              md for AI Agents
             </ActionButton>
-            <ActionButton>
-              <ExternalLink className="size-3.5" />
-              View as Markdown
-            </ActionButton>
-            <ActionIcon label="More options">
-              <MoreHorizontal className="size-4" />
-            </ActionIcon>
           </div>
+
+          {/* Hero Thumbnail Banner */}
+          {page.thumbnail && (
+            <div className="mb-8 overflow-hidden rounded-2xl border border-fd-border bg-fd-card shadow-lg">
+              <Image
+                src={page.thumbnail}
+                alt={page.title}
+                width={800}
+                height={450}
+                className="w-full h-auto object-cover max-h-[480px]"
+              />
+            </div>
+          )}
 
           <div className="md prose flex-1 text-fd-foreground/90">
             <div dangerouslySetInnerHTML={{ __html: html }} />
+            <MermaidInitializer html={html} />
           </div>
 
           <div className="mt-12 border-t pt-6">
@@ -101,7 +154,9 @@ export default async function DocsPage({
           </div>
 
           <FooterNav previous={previous} next={next} />
-          <p className="mt-6 text-sm text-fd-muted-foreground">Last updated on July 28, 2026</p>
+          <p className="mt-6 text-sm text-fd-muted-foreground">
+            Last updated on {page.lastUpdatedDate || 'August 5, 2026'}
+          </p>
         </article>
       </main>
 
@@ -185,9 +240,15 @@ function getSiblingPages(page: DocPage) {
 async function renderMarkdown(markdown: string) {
   const renderer = new marked.Renderer();
   renderer.heading = ({ tokens, depth }) => {
-    const text = tokens.map((token) => token.raw).join('');
+    const text = tokens.map((token: any) => token.raw).join('');
     const id = slugify(text);
     return `<h${depth} id="${id}">${text}</h${depth}>`;
+  };
+  renderer.code = (token: any) => {
+    if (token.lang === 'mermaid') {
+      return `<div class="mermaid">${token.text}</div>`;
+    }
+    return `<pre><code class="language-${token.lang || ''}">${token.text}</code></pre>`;
   };
 
   return marked.parse(markdown, { renderer });

@@ -16,6 +16,11 @@ export type DocPage = {
   parentSlug?: string[];
   parentTitle?: string;
   isChapterOverview?: boolean;
+  thumbnail?: string;
+  author?: string;
+  authorSocials?: string;
+  audio?: string;
+  lastUpdatedDate?: string;
 };
 
 export type DocCategory = {
@@ -107,6 +112,15 @@ export function getAllDocs(): DocPage[] {
       group: data.category ?? data.group ?? titleCase(segments[0] ?? "Start Here"),
       body,
       isChapterOverview,
+      thumbnail: data.thumbnail ?? data.image ?? undefined,
+      author: data.author ?? undefined,
+      authorSocials: data.authorSocials ?? data.author_socials ?? data.authorSocial ?? undefined,
+      audio: data.audio ?? undefined,
+      lastUpdatedDate: data.lastUpdatedDate
+        ? String(data.lastUpdatedDate)
+        : data.last_updated
+        ? String(data.last_updated)
+        : undefined,
     };
   });
 

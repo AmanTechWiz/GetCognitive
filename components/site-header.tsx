@@ -18,33 +18,21 @@ import { cn } from '@/lib/cn';
 import { CognitiveSearchTrigger } from '@/components/cognitive-search';
 
 const navItems = [
-  { href: '/blog', label: 'Newsletter', icon: AlbumIcon },
+  { href: '/newsletter', label: 'Newsletter', icon: AlbumIcon },
 ];
 
 const documentationItems = [
   {
     href: '/docs',
-    title: 'Framework',
-    description: 'The docs framework',
+    title: 'AI Concepts',
+    description: 'Explore modern AI engineering concepts and patterns.',
     icon: BookOpen,
   },
   {
-    href: '/docs/customize',
-    title: 'UI',
-    description: 'Default layouts, components, and theme tokens.',
+    href: '/docs/appendices/appendix-b-engineering-patterns',
+    title: 'Appendices',
+    description: 'Core concepts, patterns, checklists, and glossary.',
     icon: LayoutTemplate,
-  },
-  {
-    href: '/docs/writing/markdown',
-    title: 'Markdown',
-    description: 'Author docs with Markdown and MDX.',
-    icon: FileCode2,
-  },
-  {
-    href: '/docs/manual-installation',
-    title: 'Integrations',
-    description: 'Wire content, search, and frameworks together.',
-    icon: Boxes,
   },
 ];
 
@@ -132,7 +120,7 @@ function DocumentationMenu({ pathname }: { pathname: string }) {
           active && 'text-fd-primary',
         )}
       >
-        Documentation
+        Learn
         <ChevronDown className="size-3 transition-transform group-hover:rotate-180" />
       </Link>
       <div className="invisible absolute left-0 top-full z-50 w-[620px] translate-y-2 pt-2 opacity-0 transition duration-150 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
