@@ -18,6 +18,7 @@ import { docPages, getDocBySlug, type DocPage } from '@/content/docs/docs-server
 import { DocsDesktopToc, DocsMobileToc } from '@/components/docs/toc';
 import { cn } from '@/lib/cn';
 import { MermaidInitializer } from '@/components/mermaid-initializer';
+import { NotebookBlock } from '@/components/notebook-renderer';
 import { DocAudioPlayer } from '@/components/doc-audio-player';
 
 import { redirect } from 'next/navigation';
@@ -51,7 +52,7 @@ export default async function DocsPage({
   }
 
   const toc = page.toc ?? [];
-  const html = await renderMarkdown(page.body);
+  const { segments, notebooks } = await renderMarkdown(page.body);
   const { previous, next } = getSiblingPages(page);
 
   return (
@@ -135,8 +136,13 @@ export default async function DocsPage({
           )}
 
           <div className="md prose flex-1 text-fd-foreground/90">
-            <div dangerouslySetInnerHTML={{ __html: html }} />
-            <MermaidInitializer html={html} />
+            {segments.map((seg, i) => (
+              <span key={i}>
+                <span dangerouslySetInnerHTML={{ __html: seg }} />
+                {notebooks[i] && <NotebookBlock data={notebooks[i]} />}
+              </span>
+            ))}
+            <MermaidInitializer html={segments.join('')} />
           </div>
 
           <div className="mt-12 border-t pt-6">
@@ -237,21 +243,40 @@ function getSiblingPages(page: DocPage) {
   };
 }
 
-async function renderMarkdown(markdown: string) {
+async function renderMarkdown(markdown: string): Promise<{
+  segments: string[];
+  notebooks: any[];
+}> {
+  const notebooks: any[] = [];
   const renderer = new marked.Renderer();
+
   renderer.heading = ({ tokens, depth }) => {
     const text = tokens.map((token: any) => token.raw).join('');
     const id = slugify(text);
     return `<h${depth} id="${id}">${text}</h${depth}>`;
   };
+
   renderer.code = (token: any) => {
     if (token.lang === 'mermaid') {
       return `<div class="mermaid">${token.text}</div>`;
     }
+    if (token.lang === 'notebook') {
+      try {
+        const data = JSON.parse(token.text);
+        const idx = notebooks.length;
+        notebooks.push(data);
+        return `<!--NOTEBOOK:${idx}-->`;
+      } catch {
+        return `<pre><code class="language-json">${token.text}</code></pre>`;
+      }
+    }
     return `<pre><code class="language-${token.lang || ''}">${token.text}</code></pre>`;
   };
 
-  return marked.parse(markdown, { renderer });
+  const html = await marked.parse(markdown, { renderer });
+  // Split on sentinel comments → alternating html / notebook slots
+  const segments = html.split(/<!--NOTEBOOK:\d+-->/);
+  return { segments, notebooks };
 }
 
 function slugify(value: string) {

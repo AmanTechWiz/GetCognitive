@@ -1,0 +1,63 @@
+---
+title: 18. Embeddings for Search
+lastUpdatedDate: '2026-08-08'
+---
+
+# 18. Embeddings for Search
+
+## Embeddings Revisited
+
+Token embeddings are numerical vectors representing meaning. Beyond just internal model use, they're powerful tools for search.
+
+## Semantic Search
+
+### Problem with Keyword Search
+
+```
+Search: "capital of France"
+Found: "Paris is the capital"  ✓
+Missed: "The City of Light is Paris"  ✗
+```
+
+### Semantic Search Solution
+
+Search based on meaning using embeddings:
+
+```
+Query: "What's the capital of France?"
+Query embedding: [0.234, -0.512, ...]
+
+Find similar documents:
+"Paris is the capital" → [0.245, -0.498, ...]
+Similarity: 0.95 ✓
+
+"Eiffel Tower in France" → [0.102, -0.334, ...]
+Similarity: 0.45
+```
+
+## Similarity Metrics
+
+**Cosine Similarity** (most common):
+```
+Similarity = (A · B) / (||A|| * ||B||)
+Range: -1 to 1 (1 = identical)
+```
+
+**Euclidean Distance**:
+```
+Distance = sqrt(sum((a_i - b_i)²))
+Range: 0 to ∞ (0 = identical)
+```
+
+## Embedding Models
+
+```
+OpenAI text-embedding-3: Strong across domains
+Cohere: Multilingual, long context
+BGE: Open source, fast
+Instructor: Instruction-aware
+```
+
+## Why Embeddings Matter for RAG
+
+Enable automatic semantic retrieval at scale without manual curation.

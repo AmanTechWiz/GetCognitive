@@ -1,0 +1,35 @@
+---
+title: 1. Why Computers Can't Understand Language
+lastUpdatedDate: '2026-08-08'
+---
+
+# 1. Why Computers Can't Understand Language
+
+## The Problem: Language is Not Numbers
+
+Computers are fundamentally numerical machines. Everything they do—from arithmetic to graphics rendering—ultimately comes down to manipulating numbers. Yet human language is fundamentally symbolic. The word "cat" is not a number; it's a sequence of letters that humans agree represents a furry feline animal.
+
+This creates a profound gap: **how do we bridge the symbolic nature of language with the numerical nature of computation?**
+
+Consider what happens when you ask a computer to determine if two words are similar:
+- A human instantly knows "cat" and "kitten" are related
+- A computer only sees different sequences of bytes
+- A computer cannot inherently understand that both refer to similar concepts
+
+## Why Raw Text Won't Work
+
+You might think we could simply convert each letter to its ASCII code and pass that to a model. The letter 'c' becomes 99, 'a' becomes 97, and 't' becomes 116. But this approach has critical problems:
+
+1. **No semantic meaning**: The sequence [99, 97, 116] contains no information about what a cat is
+2. **Variable length**: Different words have different numbers of characters, making uniform processing difficult
+3. **No relationships**: There's nothing in these numbers that tells us 'c', 'a', and 't' form a meaningful unit together
+4. **No generalization**: The computer has no way to know that 'cat' and 'dog' are both animals
+
+## The Solution: Numerical Representations
+
+Instead of trying to process raw text, we need to represent **meaning** numerically. This means:
+- Converting text into fixed-size numerical vectors
+- Ensuring these vectors encode semantic and syntactic information
+- Creating a space where similar concepts have similar numerical representations
+
+This is the core insight that makes modern language models possible: **if we can represent language as numbers in a clever way, we can use mathematical operations to understand and generate language.**

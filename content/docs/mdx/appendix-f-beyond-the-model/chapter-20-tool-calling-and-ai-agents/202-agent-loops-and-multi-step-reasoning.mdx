@@ -1,0 +1,95 @@
+---
+title: 20.2 Agent Loops and Multi-Step Reasoning
+lastUpdatedDate: '2026-08-08'
+---
+
+# 20.2 Agent Loops and Multi-Step Reasoning
+
+## Simple Agent Loop
+
+```
+1. User query
+2. Agent thinks: What's needed?
+3. Agent acts: Call tool
+4. Agent observes: Get result
+5. Agent thinks: Need more info?
+6. Repeat if needed
+7. Generate final response
+```
+
+## Complex Example
+
+User: "Analyze our Q3 sales and find top performers"
+
+**Loop 1 - Data Gathering**:
+- Think: Need sales data
+- Act: Query database
+- Observe: Sales data retrieved
+
+**Loop 2 - Analysis**:
+- Think: Need to find top performers
+- Act: Execute analysis code
+- Observe: Results computed
+
+**Loop 3 - Context**:
+- Think: Need employee info
+- Act: Get employee details
+- Observe: Details retrieved
+
+**Loop 4 - Report**:
+- Think: Have enough info
+- Act: Generate report
+- Done: Return comprehensive analysis
+
+## Memory During Loops
+
+**Working Memory**:
+- Current task goal
+- Retrieved information
+- Intermediate results
+- Conversation history
+
+Example:
+
+```
+Goal: Analyze Q3 sales
+Retrieved: [sales_data]
+Analysis: [top_10_performers]
+Employee_info: [names, departments]
+Current_step: Generate report
+```
+
+## Stopping Conditions
+
+Agent continues until:
+- Goal achieved
+- Resource limit reached
+- Too many loops
+- Error state
+- User intervention
+
+## Planning Strategies
+
+### React (Reasoning + Acting)
+
+```
+Observe → Think → Act → Observe → ...
+```
+
+Simple but reactive. No lookahead.
+
+### Chain-of-Thought
+
+```
+Think → Plan steps → Execute step 1 → Execute step 2 → ...
+```
+
+Decompose complex tasks first, then execute.
+
+### Hierarchical
+
+```
+High-level plan → Sub-goal 1 → Sub-goal 2 → Combine results
+```
+
+Break into hierarchy of goals and sub-goals.

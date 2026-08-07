@@ -1,0 +1,70 @@
+---
+title: 20. Tool Calling and AI Agents
+lastUpdatedDate: '2026-08-08'
+---
+
+# 20. Tool Calling and AI Agents
+
+## Tool Calling
+
+LLMs can't execute code, call APIs, or access real-time data. **Tool calling** lets them request these actions.
+
+### How It Works
+
+**Define tools**:
+```
+- calculator(operation)
+- web_search(query)
+- fetch_weather(location)
+```
+
+**Model decides**:
+```
+<tool_call>
+tool_name: calculator
+parameters: {"operation": "2+2"}
+</tool_call>
+```
+
+**Execute and return**:
+```
+result = calculator("2+2")  # returns 4
+"The answer is 4."
+```
+
+## Agentic Loops
+
+An **agent** loops: think → act → observe → think...
+
+```
+User: "Analyze Q3 sales and find top performers"
+
+Loop 1: Query database for sales data
+Loop 2: Analyze data, find top performers
+Loop 3: Get employee info
+Loop 4: Generate report
+```
+
+## Agent Components
+
+- **Memory**: Long-term (knowledge base) and working (current task)
+- **Planning**: Simple, chain-of-thought, hierarchical
+- **Error Handling**: Retry, alternatives, report
+
+## Common Patterns
+
+```
+Retrieval Agent: Query → Retrieve → Summarize → Answer
+Planning Agent: Goal → Steps → Execute → Verify
+Coding Agent: Task → Generate → Execute → Check → Iterate
+Research Agent: Question → Search → Read → Synthesize
+```
+
+## Limitations
+
+- **Hallucination**: Model might invent non-existent tools
+- **Token Overhead**: Tools add tokens
+- **Latency**: Each tool call is round trip
+- **Determinism**: Results might vary
+
+Tool calling transforms LLMs into autonomous agents capable of solving real problems.

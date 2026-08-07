@@ -1,0 +1,49 @@
+---
+title: 13. Inference and Text Generation
+lastUpdatedDate: '2026-08-08'
+---
+
+# 13. Inference and Text Generation
+
+## Autoregressive Generation
+
+Generate one token at a time, using all previously generated tokens:
+
+```
+Prompt: "Once upon a time"
+
+Step 1: Predict next → "there"
+Step 2: Predict given "Once upon a time there" → "was"
+Step 3: Predict given full sequence so far → "a"
+Continue...
+```
+
+Each step: forward pass → select/sample token → append → repeat.
+
+## Decoding Strategies
+
+**Greedy**: Pick most likely token. Fast but repetitive.
+
+**Temperature**: Adjust confidence (0.3 = deterministic, 2.0 = diverse).
+
+**Top-K**: Sample from K most likely tokens.
+
+**Top-P (Nucleus)**: Sample from smallest set reaching cumulative probability P. Best in practice.
+
+**Beam Search**: Keep multiple hypotheses, return best. Slower but higher quality.
+
+## Stopping Conditions
+
+Stop when:
+- [END] token generated
+- Maximum length reached
+- User stops
+- Other criterion met
+
+## Generation Quality
+
+Depends on:
+1. Model quality
+2. Prompt quality
+3. Decoding strategy
+4. Temperature

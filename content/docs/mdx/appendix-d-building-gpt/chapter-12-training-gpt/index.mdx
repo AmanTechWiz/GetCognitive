@@ -1,0 +1,64 @@
+---
+title: 12. Training GPT
+lastUpdatedDate: '2026-08-08'
+---
+
+# 12. Training GPT
+
+## Dataset Preparation
+
+Training starts with massive text data (GPT-3: ~300B tokens). Sources: Internet, books, code, websites.
+
+All data gets tokenized and converted to integer sequences.
+
+## Next-Token Prediction Objective
+
+**Simple objective**: Predict the next token given all previous tokens.
+
+```
+"The quick brown fox jumps"
+
+Position 0: Predict "quick" given ["The"]
+Position 1: Predict "brown" given ["The", "quick"]
+Position 2: Predict "fox" given ["The", "quick", "brown"]
+...
+```
+
+One sentence = multiple training examples.
+
+## Cross-Entropy Loss
+
+For each prediction, calculate error:
+```
+Loss = -log(P(correct_token))
+```
+
+Lower probability for correct token = higher loss.
+
+## Backpropagation and Optimization
+
+Calculate how each parameter caused error using chain rule. Update using optimizer (Adam):
+```
+weight_new = weight_old - learning_rate * gradient
+```
+
+## Training Loop
+
+```
+For each epoch:
+  For each batch (2M tokens):
+    1. Forward pass
+    2. Calculate loss
+    3. Backward pass
+    4. Update weights
+```
+
+After processing all data multiple times, training complete.
+
+## Scaling Matters
+
+**Scaling law**: Performance improves predictably with scale.
+
+Scale model AND data together. Don't scale model without scaling data.
+
+This discovery drove creation of massive models.

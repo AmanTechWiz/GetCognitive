@@ -1,0 +1,81 @@
+---
+title: 20.1 Function Calling Implementation
+lastUpdatedDate: '2026-08-08'
+---
+
+# 20.1 Function Calling Implementation
+
+## Step-by-Step Process
+
+### Step 1: Define Tools
+
+Create tool specifications that the model can understand:
+
+```json
+{
+  "name": "calculator",
+  "description": "Performs arithmetic calculations",
+  "parameters": {
+    "operation": {
+      "type": "string",
+      "description": "The calculation to perform (e.g., '2+2')"
+    }
+  }
+}
+```
+
+Include in system prompt so model knows tools are available.
+
+### Step 2: Model Recognizes Need
+
+During generation, model detects it needs external help:
+
+```
+User: "What's 2 + 2?"
+Model: "I need to use the calculator tool..."
+```
+
+### Step 3: Format Tool Call
+
+Model outputs specially formatted request:
+
+```
+<tool_call>
+tool_name: calculator
+parameters: {"operation": "2+2"}
+</tool_call>
+```
+
+### Step 4: System Parses and Executes
+
+```python
+# Parse output
+tool_name = extract_tool_name(model_output)
+params = extract_parameters(model_output)
+
+# Validate
+if tool_name not in available_tools:
+    error = "Tool not found"
+else:
+    # Execute
+    result = execute_tool(tool_name, params)
+```
+
+### Step 5: Return to Model
+
+Pass result back to model as continuation:
+
+```
+Tool 'calculator' with operation '2+2' returned: 4
+
+(Model continues from here)
+```
+
+Model can then use the result to generate final response.
+
+## Handling Errors
+
+- **Invalid tool**: Model should handle gracefully or retry
+- **Parameter errors**: Validate before execution
+- **Tool failure**: Return error message to model
+- **Timeout**: Implement timeout and fallback

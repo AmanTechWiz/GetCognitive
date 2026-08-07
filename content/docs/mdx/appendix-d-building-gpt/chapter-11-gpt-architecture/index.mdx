@@ -1,0 +1,54 @@
+---
+title: 11. GPT Architecture
+lastUpdatedDate: '2026-08-08'
+---
+
+# 11. GPT Architecture
+
+## Decoder-Only Transformer
+
+GPT uses a **decoder-only transformer**: just decoder blocks stacked together, no separate encoder.
+
+Key insight: A decoder-only transformer can generate language if trained to predict the next token.
+
+## The Pipeline
+
+```
+"Hello world" 
+  ↓ tokenize
+[15496, 2134]
+  ↓ embedding lookup
+Embeddings (768D each)
+  ↓ add positional encoding
+  ↓ 96 transformer blocks
+Refined representations
+  ↓ project to vocabulary
+Logits (50,000 dimensions)
+  ↓ softmax
+Probabilities (sum to 1)
+```
+
+## How GPT Predicts the Next Token
+
+1. Processes all previous tokens
+2. Uses attention to determine relevant tokens
+3. Combines information to estimate next token probability
+4. Returns probability distribution
+
+## Why This Works at Scale
+
+**Scaling discovery**: Large models trained on next-token prediction learn rich representations.
+
+With billions of parameters and trillions of tokens:
+- Learns syntax, grammar
+- Learns factual information
+- Learns reasoning patterns
+- **Emerges**: Capabilities that were never explicitly programmed
+
+## The Decoder Mask
+
+During generation, use **causal masking**:
+- Can attend to: tokens 1-99
+- Cannot attend to: tokens 101+
+
+Prevents cheating by looking at future.

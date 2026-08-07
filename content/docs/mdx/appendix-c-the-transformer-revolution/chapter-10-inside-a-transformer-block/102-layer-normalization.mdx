@@ -1,0 +1,55 @@
+---
+title: 10.2 Layer Normalization
+lastUpdatedDate: '2026-08-08'
+---
+
+# 10.2 Layer Normalization
+
+## The Problem: Activation Magnitude
+
+As activations flow through layers, their magnitude can explode or vanish. This makes training unstable and slow.
+
+```
+Layer 1 output: [0.1, 0.05, 0.2, ...]  (small)
+    ↓
+Layer 2 output: [10.5, 23.1, 5.8, ...]  (huge!)
+    ↓
+Layer 3 might explode or saturate
+```
+
+## Layer Normalization
+
+**Layer normalization** rescales activations to have mean 0 and standard deviation 1:
+
+```
+x_normalized = (x - mean(x)) / sqrt(var(x) + ε)
+x_scaled = gamma * x_normalized + beta
+```
+
+Where `gamma` (scale) and `beta` (shift) are learnable parameters.
+
+## How It Works
+
+1. Compute mean and variance of activations across features
+2. Normalize to zero mean, unit variance
+3. Learn scale (gamma) and shift (beta) parameters
+4. This is applied per sample, per layer
+
+## Why It Matters
+
+- **Stabilizes training**: Keeps activations in reasonable range
+- **Faster convergence**: Allows larger learning rates
+- **Enables depth**: Makes training of very deep networks practical
+- **Reduces sensitivity**: Network less sensitive to parameter initialization
+
+## In Transformers
+
+Applied before/after attention and feed-forward:
+
+```
+x_normalized = LayerNorm(x)
+x_attended = MultiHeadAttention(x_normalized)
+x_final = x + x_attended
+```
+
+Combined with residual connections, layer norm makes 96-layer networks trainable.

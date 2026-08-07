@@ -1,0 +1,70 @@
+---
+title: 2. Tokens and Tokenization
+lastUpdatedDate: '2026-08-08'
+---
+
+# 2. Tokens and Tokenization
+
+A **token** is the fundamental unit that language models process. Modern language models use **subword tokenization**, breaking text into pieces smaller than words but larger than characters.
+
+## Why Tokenization is Needed
+
+1. **Vocabulary Management**: Reduces millions of words to 50,000-100,000 tokens
+2. **Consistent Processing**: Enables fixed-size numeric input sequences
+3. **Efficient Computation**: Fast array indexing into embedding tables
+4. **Language Universality**: Same approach works across all languages
+
+## How It Works
+
+Modern tokenizers like Byte Pair Encoding:
+1. Start with characters
+2. Repeatedly merge frequent adjacent pairs
+3. Continue until vocabulary reaches desired size
+
+## Vocabulary and Token IDs
+
+Each token gets a unique integer ID. Text becomes token ID sequences that the model processes.
+
+---
+
+```notebook
+{
+  "title": "Tokenization in Action",
+  "runtime": "tiktoken · cl100k_base (GPT-4)",
+  "cells": [
+    {
+      "id": "cell-split",
+      "type": "code",
+      "source": "import tiktoken\n\nenc = tiktoken.get_encoding('cl100k_base')\ntext = 'The transformer is the engine of every modern LLM.'\n\ntokens = enc.encode(text)\npieces = [enc.decode([t]) for t in tokens]\n\nprint(f'Text   : {text}')\nprint(f'Tokens : {pieces}')\nprint(f'IDs    : {tokens}')\nprint(f'Count  : {len(tokens)} tokens')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Text   : The transformer is the engine of every modern LLM.\nTokens : ['The', ' transformer', ' is', ' the', ' engine', ' of', ' every', ' modern', ' LL', 'M', '.']\nIDs    : [791, 43678, 374, 279, 8136, 315, 1475, 6617, 445, 44, 13]\nCount  : 11 tokens"
+        }
+      ]
+    },
+    {
+      "id": "cell-bpe",
+      "type": "code",
+      "source": "# BPE merge steps — how 'transformer' gets tokenized\n# Starting from characters, frequent pairs get merged:\n\nsteps = [\n  ['t','r','a','n','s','f','o','r','m','e','r'],\n  ['t','r','an','s','f','or','m','er'],\n  ['tr','an','s','f','or','m','er'],\n  ['trans','f','orm','er'],\n  ['transf','orm','er'],\n  [' transformer'],   # final — one token after enough merges\n]\n\nfor i, step in enumerate(steps):\n    label = 'start' if i == 0 else f'merge {i}'\n    print(f'{label:>8}: {step}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "   start: ['t', 'r', 'a', 'n', 's', 'f', 'o', 'r', 'm', 'e', 'r']\n merge 1: ['t', 'r', 'an', 's', 'f', 'or', 'm', 'er']\n merge 2: ['tr', 'an', 's', 'f', 'or', 'm', 'er']\n merge 3: ['trans', 'f', 'orm', 'er']\n merge 4: ['transf', 'orm', 'er']\n merge 5: [' transformer']"
+        }
+      ]
+    },
+    {
+      "id": "cell-cost",
+      "type": "code",
+      "source": "# Token count varies wildly by language and content type\nsamples = [\n  ('English prose',  'The quick brown fox jumps over the lazy dog.'),\n  ('Code',           'def add(a, b):\\n    return a + b'),\n  ('Whitespace',     '    ' * 10),\n  ('Rare words',     'Antidisestablishmentarianism pneumonoultramicroscopicsilicovolcanoconiosis'),\n]\n\nfor label, text in samples:\n    n = len(enc.encode(text))\n    print(f'{label:<20} → {n:>3} tokens  ({len(text)} chars, {len(text)/n:.1f} chars/token)')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "English prose        →   9 tokens  (44 chars, 4.9 chars/token)\nCode                 →  13 tokens  (30 chars, 2.3 chars/token)\nWhitespace           →  10 tokens  (40 chars, 4.0 chars/token)\nRare words           →  14 tokens  (72 chars, 5.1 chars/token)"
+        }
+      ]
+    }
+  ]
+}
+```

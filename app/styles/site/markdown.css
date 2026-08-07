@@ -1,3 +1,465 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Notebook (Colab-style) component styles
+   Uses --fd-* tokens so it inherits light/dark automatically.
+   The .nb-dark / .nb-light classes are applied by the React component.
+───────────────────────────────────────────────────────────────────────────── */
+
+/* Scoped CSS variables */
+.nb-root {
+  --nb-bg:           var(--color-fd-background);
+  --nb-surface:      var(--color-fd-card);
+  --nb-surface-2:    var(--color-fd-secondary);
+  --nb-border:       var(--color-fd-border);
+  --nb-text:         var(--color-fd-foreground);
+  --nb-muted:        var(--color-fd-muted-foreground);
+  --nb-accent:       var(--color-fd-accent);
+  --nb-run:          #4caf50;
+  --nb-run-hover:    #43a047;
+  --nb-run-active:   #e53935;
+  --nb-exec-color:   #1976d2;
+  --nb-error-bg:     rgba(229, 57, 53, 0.08);
+  --nb-error-text:   #e53935;
+  --nb-output-bg:    var(--color-fd-muted);
+  --nb-code-bg:      var(--color-fd-secondary);
+  --nb-radius:       0.75rem;
+  --nb-cell-radius:  0.5rem;
+  --nb-font-mono:    ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  --nb-font-size:    0.82rem;
+  --nb-running-color: #ff9800;
+  --nb-toolbar-bg:   var(--color-fd-card);
+}
+
+/* Dark overrides — more Colab-like darkness */
+.nb-root.nb-dark {
+  --nb-surface:      hsl(0 0% 11%);
+  --nb-surface-2:    hsl(0 0% 13.5%);
+  --nb-code-bg:      hsl(0 0% 10%);
+  --nb-output-bg:    hsl(0 0% 9%);
+  --nb-toolbar-bg:   hsl(0 0% 11%);
+  --nb-exec-color:   #64b5f6;
+  --nb-run:          #66bb6a;
+  --nb-run-hover:    #81c784;
+  --nb-running-color: #ffa726;
+}
+
+/* Container */
+.nb-root {
+  border: 1px solid var(--nb-border);
+  border-radius: var(--nb-radius);
+  background: var(--nb-bg);
+  overflow: hidden;
+  font-family: var(--nb-font-mono);
+  font-size: var(--nb-font-size);
+  margin: 1.75rem 0;
+  box-shadow: 0 2px 16px -4px rgba(0,0,0,0.12);
+}
+
+/* ── Toolbar ── */
+.nb-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  background: var(--nb-toolbar-bg);
+  border-bottom: 1px solid var(--nb-border);
+  flex-wrap: wrap;
+}
+
+.nb-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.nb-title {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--nb-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nb-runtime-badge {
+  font-family: var(--nb-font-mono);
+  font-size: 0.7rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: var(--nb-surface-2);
+  color: var(--nb-muted);
+  border: 1px solid var(--nb-border);
+  white-space: nowrap;
+}
+
+.nb-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.nb-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--nb-border);
+  background: var(--nb-surface-2);
+  color: var(--nb-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.76rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.nb-toolbar-btn:hover {
+  background: var(--nb-accent);
+}
+
+.nb-toolbar-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.nb-toolbar-btn--primary {
+  background: var(--nb-run);
+  color: #fff;
+  border-color: transparent;
+}
+
+.nb-toolbar-btn--primary:hover:not(:disabled) {
+  background: var(--nb-run-hover);
+}
+
+.nb-toolbar-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex-shrink: 0;
+}
+
+/* ── Cells wrapper ── */
+.nb-cells {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Individual cell ── */
+.nb-cell {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--nb-border);
+  transition: background 0.15s;
+  position: relative;
+}
+
+.nb-cell:last-child {
+  border-bottom: none;
+}
+
+.nb-cell:hover {
+  background: rgba(0,0,0,0.015);
+}
+.nb-dark .nb-cell:hover {
+  background: rgba(255,255,255,0.02);
+}
+
+/* Running cell highlight */
+.nb-cell--running {
+  background: rgba(255, 152, 0, 0.04);
+}
+.nb-cell--running::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--nb-running-color);
+  border-radius: 0 2px 2px 0;
+  animation: nb-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes nb-pulse {
+  from { opacity: 0.4; }
+  to   { opacity: 1;   }
+}
+
+/* ── Gutter ── */
+.nb-gutter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.7rem 0.5rem 0.7rem 0.6rem;
+  min-width: 3.2rem;
+  max-width: 3.2rem;
+  flex-shrink: 0;
+  border-right: 1px solid var(--nb-border);
+  background: var(--nb-surface);
+}
+
+.nb-run-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--nb-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.nb-run-btn:hover:not(:disabled) {
+  background: rgba(76, 175, 80, 0.15);
+  color: var(--nb-run);
+}
+
+.nb-run-btn--active {
+  color: var(--nb-run-active) !important;
+  animation: nb-spin 1.2s linear infinite;
+}
+
+@keyframes nb-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.nb-run-icon {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.nb-run-icon--stop {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+
+.nb-exec-count {
+  font-family: var(--nb-font-mono);
+  font-size: 0.62rem;
+  color: var(--nb-exec-color);
+  text-align: center;
+  min-width: 2.2rem;
+  opacity: 0.9;
+  letter-spacing: -0.01em;
+}
+
+.nb-gutter-type-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  color: var(--nb-muted);
+  opacity: 0.5;
+}
+
+.nb-type-icon {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+/* ── Cell body ── */
+.nb-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Source area ── */
+.nb-source {
+  position: relative;
+  padding: 0.6rem 0.85rem 0.6rem 0.7rem;
+}
+
+.nb-source--code {
+  background: var(--nb-code-bg);
+}
+
+.nb-source--markdown,
+.nb-source--text {
+  background: var(--nb-surface);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.85rem;
+  color: var(--nb-muted);
+  font-style: italic;
+  cursor: default;
+}
+
+.nb-code-pre {
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  background: transparent;
+  border: none;
+  font-family: var(--nb-font-mono);
+  font-size: var(--nb-font-size);
+  line-height: 1.65;
+  color: var(--nb-text);
+  white-space: pre;
+  tab-size: 4;
+}
+
+.nb-code {
+  display: block;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+/* Collapse button */
+.nb-collapse-btn {
+  position: absolute;
+  left: -0.1rem;
+  top: 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: none;
+  background: transparent;
+  color: var(--nb-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  border-radius: 2px;
+  padding: 0;
+  z-index: 1;
+}
+
+.nb-source:hover .nb-collapse-btn {
+  opacity: 1;
+}
+
+.nb-collapse-icon {
+  width: 0.65rem;
+  height: 0.65rem;
+}
+
+/* Collapsed hint */
+.nb-collapsed-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--nb-muted);
+  font-size: 0.78rem;
+  padding: 0.1rem 0;
+  user-select: none;
+}
+
+.nb-collapsed-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex-shrink: 0;
+}
+
+/* ── Outputs ── */
+.nb-outputs {
+  border-top: 1px solid var(--nb-border);
+}
+
+.nb-output {
+  padding: 0.55rem 0.85rem;
+}
+
+.nb-output--text {
+  background: var(--nb-output-bg);
+}
+
+.nb-output-text-pre {
+  margin: 0;
+  font-family: var(--nb-font-mono);
+  font-size: var(--nb-font-size);
+  line-height: 1.6;
+  color: var(--nb-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.nb-output--error {
+  background: var(--nb-error-bg);
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.nb-output-error-icon {
+  width: 0.85rem;
+  height: 0.85rem;
+  color: var(--nb-error-text);
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
+.nb-output-error-pre {
+  margin: 0;
+  font-family: var(--nb-font-mono);
+  font-size: var(--nb-font-size);
+  line-height: 1.55;
+  color: var(--nb-error-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.nb-output--html {
+  background: var(--nb-output-bg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 0.85rem;
+  color: var(--nb-text);
+  line-height: 1.6;
+}
+
+.nb-output--image {
+  background: var(--nb-output-bg);
+  padding: 0.75rem;
+}
+
+.nb-output-img {
+  max-width: 100%;
+  border-radius: 0.375rem;
+  display: block;
+}
+
+/* ─── Override prose `.md pre` inside notebooks so code isn't double-styled ── */
+.md .nb-root pre {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.md .nb-root code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
 @layer base {
   .md {
     @apply text-fd-foreground/90 leading-7;

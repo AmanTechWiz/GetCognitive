@@ -1,0 +1,74 @@
+---
+title: 17. How ChatGPT Works
+lastUpdatedDate: '2026-08-08'
+---
+
+# 17. How ChatGPT Works
+
+## From GPT-3 to ChatGPT
+
+**GPT-3**: Pure language model. Powerful but unpredictable.
+
+**ChatGPT**: GPT fine-tuned and aligned to follow instructions and have conversations.
+
+## Chat Format
+
+Structured format instead of raw text:
+
+```
+<|system|>
+You are a helpful assistant.
+
+<|user|>
+How do I make pasta?
+
+<|assistant|>
+Here's a recipe...
+```
+
+Model learns to generate next assistant message.
+
+## Conversation Management
+
+Model sees ALL previous messages when responding. Uses full context.
+
+Long conversations eventually hit context limit (requires truncation/summarization).
+
+## System Prompts
+
+Establish behavior:
+```
+"You are helpful, harmless, and honest.
+ You have knowledge up to April 2024."
+```
+
+Users can try to override, but well-designed systems resist.
+
+## Response Generation
+
+```
+Full conversation history
+  ↓ 96 transformer blocks
+Generate next token
+  ↓ append
+Continue...
+```
+
+Streaming sends tokens immediately instead of waiting.
+
+## Memory and Context
+
+ChatGPT has **NO persistent memory** between conversations. Only remembers current conversation.
+
+**Long conversation strategies**:
+- Summarization
+- Retrieval (store and retrieve relevant past)
+- External memory (persistent user facts)
+
+## Limitations
+
+- **Hallucinations**: Confidently states false information
+- **Recency**: Training data has cutoff
+- **Context limits**: Long conversations hit limit
+
+Same model, optimized for real-world use.

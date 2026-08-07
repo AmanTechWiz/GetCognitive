@@ -1,0 +1,74 @@
+---
+title: 19. Vector Databases and RAG
+lastUpdatedDate: '2026-08-08'
+---
+
+# 19. Vector Databases and RAG
+
+## Vector Databases
+
+### Problem
+
+Searching through millions of embeddings is slow:
+
+```
+1 million documents
+Calculate similarity for each
+Total: 1M calculations
+Too slow!
+```
+
+### Solution: ANN (Approximate Nearest Neighbors)
+
+Use spatial data structures. Find nearest neighbors in O(log n) instead of O(n).
+
+### Common Databases
+
+```
+Pinecone: Managed, scales automatically
+Weaviate: Open source, self-hosted
+Milvus: High performance, distributed
+Qdrant: Fast, flexible filtering
+Redis Search: In-memory, familiar
+```
+
+## RAG: Retrieval Augmented Generation
+
+### The Idea
+
+LLMs only know training data. To answer about new documents: retrieve relevant docs, pass as context.
+
+### RAG Pipeline
+
+```
+Query: "What's our payment policy?"
+
+1. Embed query
+2. Search vector DB
+3. Build context from retrieved docs
+4. Pass to LLM with question
+5. LLM generates answer
+```
+
+### Benefits
+
+```
+✓ Access current information
+✓ Domain-specific knowledge
+✓ Transparency (see sources)
+✓ Reduced hallucination
+✗ Slower
+✗ Quality depends on retrieval
+```
+
+## Rerankers
+
+After retrieval, refine with more sophisticated model to improve accuracy.
+
+## RAG vs Fine-Tuning
+
+**Use RAG when**: Knowledge changes frequently, lots of documents, want transparency
+
+**Use Fine-tuning when**: Specific task, stable knowledge, encode patterns
+
+**Often**: Combine both!

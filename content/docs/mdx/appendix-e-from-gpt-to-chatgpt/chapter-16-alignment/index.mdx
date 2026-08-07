@@ -1,0 +1,68 @@
+---
+title: 16. Alignment
+lastUpdatedDate: '2026-08-08'
+---
+
+# 16. Alignment
+
+## The Problem
+
+After pre-training, GPT just predicts plausible continuations. Many are:
+- Harmful
+- Offensive
+- Factually wrong
+- Against human values
+
+**Alignment**: Making models behave according to human values.
+
+## RLHF: Reinforcement Learning from Human Feedback
+
+**Step 1**: Collect human preferences
+
+```
+Prompt: "Why is the sky blue?"
+
+Completion A: "Rayleigh scattering..."
+Completion B: "Sometimes green..."
+Human: "A is better"
+```
+
+**Step 2**: Train reward model to predict preferences
+
+**Step 3**: Use reward to fine-tune LLM
+
+```
+LLM generates → Reward model scores → If high: reinforce → If low: update away
+```
+
+Result: ChatGPT is more helpful, honest, less harmful.
+
+## DPO: Direct Preference Optimization
+
+Simpler than RLHF. Train LLM directly on preferences without separate reward model.
+
+```
+For each pair (preferred, not preferred):
+  Increase probability of preferred
+  Decrease probability of not preferred
+```
+
+More efficient, often produces better results.
+
+## The Tradeoff
+
+Alignment creates tension:
+
+```
+Over-aligned: Very safe but unhelpful
+Under-aligned: Helpful but potentially harmful
+Sweet spot: Good tradeoff (still has failure modes)
+```
+
+## Limitations
+
+- Users can find ways around safety measures
+- Different people have different values
+- Heavy-handed safety can limit capability
+
+Alignment isn't solved. Techniques work reasonably well but there's always tradeoff.

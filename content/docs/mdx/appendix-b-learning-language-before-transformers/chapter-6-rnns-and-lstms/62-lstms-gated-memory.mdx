@@ -1,0 +1,54 @@
+---
+title: '6.2 LSTMs: Gated Memory'
+lastUpdatedDate: '2026-08-08'
+---
+
+# 6.2 LSTMs: Gated Memory
+
+## The LSTM Solution
+
+**Long Short-Term Memory** networks were designed to solve vanishing gradients. Instead of a simple hidden state, LSTMs have a **cell state** that flows through time with better gradient properties.
+
+## Three Gates
+
+An LSTM cell has three main gates controlling information flow:
+
+### Forget Gate
+```
+f_t = sigmoid(W_f * [h_{t-1}, x_t] + b_f)
+```
+Decides what to forget from cell state (0 = forget, 1 = remember)
+
+### Input Gate
+```
+i_t = sigmoid(W_i * [h_{t-1}, x_t] + b_i)
+new_cell = tanh(W_c * [h_{t-1}, x_t] + b_c)
+```
+Decides what new information to add to cell state
+
+### Output Gate
+```
+o_t = sigmoid(W_o * [h_{t-1}, x_t] + b_o)
+```
+Decides what cell state to expose as output
+
+## Update Equations
+
+```
+cell_t = f_t * cell_{t-1} + i_t * new_cell
+hidden_t = o_t * tanh(cell_t)
+output_t = softmax(W_output * hidden_t + b_output)
+```
+
+## Why This Works
+
+- **Forget gate** learns to discard irrelevant old information
+- **Input gate** learns to incorporate new relevant information
+- **Output gate** learns to expose internal state useful for prediction
+- **Cell state** has additive connections that preserve gradients during backprop
+
+The key is that addition doesn't multiply small numbers like composition does, so gradients flow better through time.
+
+## Improved Range
+
+LSTMs could capture longer-range dependencies—sometimes 50-100 tokens—which was better than vanilla RNNs but still limited.

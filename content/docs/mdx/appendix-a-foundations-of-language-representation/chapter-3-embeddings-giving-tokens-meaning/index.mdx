@@ -1,0 +1,24 @@
+---
+title: '3. Embeddings: Giving Tokens Meaning'
+lastUpdatedDate: '2026-08-08'
+---
+
+# 3. Embeddings: Giving Tokens Meaning
+
+A **token embedding** is a fixed-size vector of numbers that represents the meaning of a token. For example, with 768-dimensional embeddings, "cat" might be [0.234, -0.512, 0.891, ...] and "dog" might be [0.245, -0.498, 0.887, ...].
+
+## The Magic
+
+Similar tokens have similar embeddings. Embeddings capture semantic relationships:
+- embedding("king") - embedding("man") + embedding("woman") ≈ embedding("queen")
+
+## How It Works
+
+All token embeddings are organized in an embedding matrix. During training, these values are learned so that:
+- Semantically similar tokens have similar embeddings
+- The embeddings capture useful information for predicting the next token
+- Related tokens cluster together in embedding space
+
+## Why This Matters
+
+Embeddings transform language from symbolic to numerical, enabling mathematical operations on meaning. This is the foundation of everything that follows.

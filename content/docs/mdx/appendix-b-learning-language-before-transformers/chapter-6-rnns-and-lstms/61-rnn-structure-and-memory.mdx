@@ -1,0 +1,45 @@
+---
+title: 6.1 RNN Structure and Memory
+lastUpdatedDate: '2026-08-08'
+---
+
+# 6.1 RNN Structure and Memory
+
+## How RNNs Remember
+
+The key innovation of RNNs is **memory**. At each time step, they maintain a hidden state containing information about everything seen so far.
+
+```
+                    ↓ hidden state flows back
+Input: "The" → [RNN Cell] → Output: predict "cat"?
+                    ↓
+Input: "cat" → [RNN Cell] → Output: predict "sat"?
+       (uses hidden state from previous step)
+                    ↓
+Input: "sat" → [RNN Cell] → Output: predict "on"?
+       (uses hidden state from previous steps)
+```
+
+## Mathematical Formulation
+
+```
+hidden_t = tanh(W_h * hidden_{t-1} + W_i * input_t + b)
+output_t = softmax(W_o * hidden_t + b_o)
+```
+
+Where:
+- `hidden_{t-1}` is the memory from previous step
+- `input_t` is current token's embedding
+- `W_h`, `W_i`, `W_o` are learnable weights
+- `tanh` adds non-linearity
+
+## The Hidden State as Bottleneck
+
+The hidden state acts as a bottleneck through which all information flows. Over time steps, the network learns to encode relevant information in this fixed-size vector.
+
+For "The cat sat on the mat":
+- After "The": hidden state might encode "expecting a noun"
+- After "The cat": encodes "singular subject"
+- After "The cat sat": encodes "action complete, expecting location/time"
+
+This compression is both blessing and curse—enables learning but limits information capacity.

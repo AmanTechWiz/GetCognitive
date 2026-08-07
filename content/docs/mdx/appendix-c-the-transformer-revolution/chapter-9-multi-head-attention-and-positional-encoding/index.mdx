@@ -1,0 +1,40 @@
+---
+title: 9. Multi-Head Attention and Positional Encoding
+lastUpdatedDate: '2026-08-08'
+---
+
+# 9. Multi-Head Attention and Positional Encoding
+
+## Multi-Head Attention
+
+A single attention head learns one pattern. Multi-head attention runs multiple heads in parallel:
+
+```
+Input: 768 dimensions
+Split into 12 heads: 64 dimensions each
+Each computes attention independently
+Concatenate back to 768 dimensions
+```
+
+**Benefits**:
+- Multiple perspectives on input
+- More expressive
+- Robust (one noisy head doesn't break everything)
+
+## Positional Encoding
+
+Attention doesn't know about position. But position matters: "dog bites man" ≠ "man bites dog"
+
+**Solution**: Add positional information to embeddings:
+```
+Input to attention = token_embedding + positional_encoding
+```
+
+**Methods**:
+- Fixed sine/cosine patterns (original)
+- Learned embeddings (modern)
+- RoPE - Rotary Position Embedding (best for long contexts)
+
+Each position gets unique encoding that generalizes to longer sequences.
+
+Together, multi-head attention + positional encoding create powerful mechanisms for understanding both content and structure.
