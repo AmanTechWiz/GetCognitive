@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { marked } from 'marked';
+import { createHighlighter } from 'shiki';
 import {
   Calendar,
   Check,
@@ -243,11 +244,28 @@ function getSiblingPages(page: DocPage) {
   };
 }
 
+// Shiki highlighter — initialised once per request (cached by Next.js module cache)
+let _highlighter: Awaited<ReturnType<typeof createHighlighter>> | null = null;
+async function getHighlighter() {
+  if (!_highlighter) {
+    _highlighter = await createHighlighter({
+      themes: ['github-light', 'github-dark'],
+      langs: [
+        'python', 'typescript', 'javascript', 'tsx', 'jsx',
+        'json', 'bash', 'shell', 'text', 'plaintext',
+        'html', 'css', 'markdown', 'yaml', 'toml',
+      ],
+    });
+  }
+  return _highlighter;
+}
+
 async function renderMarkdown(markdown: string): Promise<{
   segments: string[];
   notebooks: any[];
 }> {
   const notebooks: any[] = [];
+  const hl = await getHighlighter();
   const renderer = new marked.Renderer();
 
   renderer.heading = ({ tokens, depth }) => {
@@ -263,14 +281,41 @@ async function renderMarkdown(markdown: string): Promise<{
     if (token.lang === 'notebook') {
       try {
         const data = JSON.parse(token.text);
+        // Pre-highlight every code cell so the client component can render
+        // syntax-highlighted HTML without needing a client-side highlighter.
+        const supportedLangs = hl.getLoadedLanguages();
+        const highlightedCells = (data.cells ?? []).map((cell: any) => {
+          if (cell.type !== 'code') return cell;
+          const cellLang = cell.lang ?? 'python';
+          const lang = supportedLangs.includes(cellLang) ? cellLang : 'python';
+          const highlightedHtml = hl.codeToHtml(cell.source, {
+            lang,
+            themes: { light: 'github-light', dark: 'github-dark' },
+            defaultColor: false,
+          });
+          return { ...cell, highlightedSource: highlightedHtml };
+        });
         const idx = notebooks.length;
-        notebooks.push(data);
+        notebooks.push({ ...data, cells: highlightedCells });
         return `<!--NOTEBOOK:${idx}-->`;
       } catch {
         return `<pre><code class="language-json">${token.text}</code></pre>`;
       }
     }
-    return `<pre><code class="language-${token.lang || ''}">${token.text}</code></pre>`;
+
+    // Resolve language — fall back to plaintext if not supported
+    const rawLang = token.lang || '';
+    const supportedLangs = hl.getLoadedLanguages();
+    const lang = supportedLangs.includes(rawLang) ? rawLang : 'plaintext';
+
+    const highlighted = hl.codeToHtml(token.text, {
+      lang,
+      themes: { light: 'github-light', dark: 'github-dark' },
+      defaultColor: false, // emit both themes via CSS vars
+    });
+
+    // Wrap in our own container so we can style it consistently
+    return `<div class="shiki-wrapper">${highlighted}</div>`;
   };
 
   const html = await marked.parse(markdown, { renderer });

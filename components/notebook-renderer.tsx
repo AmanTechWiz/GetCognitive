@@ -27,6 +27,7 @@ interface NotebookCell {
   id: string;
   type: CellType;
   source: string;
+  highlightedSource?: string; // pre-rendered Shiki HTML from the server
   outputs?: CellOutput[];
 }
 
@@ -143,6 +144,11 @@ function Cell({
                 {cell.source.includes('\n') ? ' …' : ''}
               </span>
             </div>
+          ) : cell.highlightedSource ? (
+            <div
+              className="nb-shiki-source"
+              dangerouslySetInnerHTML={{ __html: cell.highlightedSource }}
+            />
           ) : (
             <pre className="nb-code-pre">
               <code className="nb-code">{cell.source}</code>

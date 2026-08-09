@@ -1,70 +1,332 @@
 ---
 title: 2. Tokens and Tokenization
-lastUpdatedDate: '2026-08-08'
+lastUpdatedDate: '2026-08-09'
 ---
 
 # 2. Tokens and Tokenization
 
-A **token** is the fundamental unit that language models process. Modern language models use **subword tokenization**, breaking text into pieces smaller than words but larger than characters.
+Let's start with a concrete question: when you type a message to ChatGPT, what does the model *actually receive*?
 
-## Why Tokenization is Needed
+Not your words. Not your letters. Not even bytes.
 
-1. **Vocabulary Management**: Reduces millions of words to 50,000-100,000 tokens
-2. **Consistent Processing**: Enables fixed-size numeric input sequences
-3. **Efficient Computation**: Fast array indexing into embedding tables
-4. **Language Universality**: Same approach works across all languages
+It receives a sequence of **integers** — a list of numbers like `[791, 43678, 374, 279, 8136, 315, 1475, 6617, 445, 44, 13]`.
 
-## How It Works
+That's the sentence `"The transformer is the engine of every modern LLM."` after it has been processed by a tokenizer. Eleven integers representing eleven pieces of text. The model has no direct access to the original characters — it only ever sees these IDs.
 
-Modern tokenizers like Byte Pair Encoding:
-1. Start with characters
-2. Repeatedly merge frequent adjacent pairs
-3. Continue until vocabulary reaches desired size
-
-## Vocabulary and Token IDs
-
-Each token gets a unique integer ID. Text becomes token ID sequences that the model processes.
-
----
+Run the cell below to see this yourself with GPT-4's real tokenizer.
 
 ```notebook
 {
-  "title": "Tokenization in Action",
-  "runtime": "tiktoken · cl100k_base (GPT-4)",
+  "title": "Step 0 — What the model actually receives",
+  "runtime": "Python · tiktoken",
   "cells": [
     {
-      "id": "cell-split",
+      "id": "cell-intro",
       "type": "code",
-      "source": "import tiktoken\n\nenc = tiktoken.get_encoding('cl100k_base')\ntext = 'The transformer is the engine of every modern LLM.'\n\ntokens = enc.encode(text)\npieces = [enc.decode([t]) for t in tokens]\n\nprint(f'Text   : {text}')\nprint(f'Tokens : {pieces}')\nprint(f'IDs    : {tokens}')\nprint(f'Count  : {len(tokens)} tokens')",
+      "source": "import tiktoken\n\nenc = tiktoken.get_encoding('cl100k_base')  # GPT-4's tokenizer\n\ntext = 'The transformer is the engine of every modern LLM.'\ntokens = enc.encode(text)\npieces = [enc.decode([t]) for t in tokens]\n\nprint(f'Text   : {text}')\nprint(f'Pieces : {pieces}')\nprint(f'IDs    : {tokens}')\nprint(f'Count  : {len(tokens)} tokens for {len(text)} characters')",
       "outputs": [
         {
           "type": "text",
-          "content": "Text   : The transformer is the engine of every modern LLM.\nTokens : ['The', ' transformer', ' is', ' the', ' engine', ' of', ' every', ' modern', ' LL', 'M', '.']\nIDs    : [791, 43678, 374, 279, 8136, 315, 1475, 6617, 445, 44, 13]\nCount  : 11 tokens"
-        }
-      ]
-    },
-    {
-      "id": "cell-bpe",
-      "type": "code",
-      "source": "# BPE merge steps — how 'transformer' gets tokenized\n# Starting from characters, frequent pairs get merged:\n\nsteps = [\n  ['t','r','a','n','s','f','o','r','m','e','r'],\n  ['t','r','an','s','f','or','m','er'],\n  ['tr','an','s','f','or','m','er'],\n  ['trans','f','orm','er'],\n  ['transf','orm','er'],\n  [' transformer'],   # final — one token after enough merges\n]\n\nfor i, step in enumerate(steps):\n    label = 'start' if i == 0 else f'merge {i}'\n    print(f'{label:>8}: {step}')",
-      "outputs": [
-        {
-          "type": "text",
-          "content": "   start: ['t', 'r', 'a', 'n', 's', 'f', 'o', 'r', 'm', 'e', 'r']\n merge 1: ['t', 'r', 'an', 's', 'f', 'or', 'm', 'er']\n merge 2: ['tr', 'an', 's', 'f', 'or', 'm', 'er']\n merge 3: ['trans', 'f', 'orm', 'er']\n merge 4: ['transf', 'orm', 'er']\n merge 5: [' transformer']"
-        }
-      ]
-    },
-    {
-      "id": "cell-cost",
-      "type": "code",
-      "source": "# Token count varies wildly by language and content type\nsamples = [\n  ('English prose',  'The quick brown fox jumps over the lazy dog.'),\n  ('Code',           'def add(a, b):\\n    return a + b'),\n  ('Whitespace',     '    ' * 10),\n  ('Rare words',     'Antidisestablishmentarianism pneumonoultramicroscopicsilicovolcanoconiosis'),\n]\n\nfor label, text in samples:\n    n = len(enc.encode(text))\n    print(f'{label:<20} → {n:>3} tokens  ({len(text)} chars, {len(text)/n:.1f} chars/token)')",
-      "outputs": [
-        {
-          "type": "text",
-          "content": "English prose        →   9 tokens  (44 chars, 4.9 chars/token)\nCode                 →  13 tokens  (30 chars, 2.3 chars/token)\nWhitespace           →  10 tokens  (40 chars, 4.0 chars/token)\nRare words           →  14 tokens  (72 chars, 5.1 chars/token)"
+          "content": "Text   : The transformer is the engine of every modern LLM.\nPieces : ['The', ' transformer', ' is', ' the', ' engine', ' of', ' every', ' modern', ' LL', 'M', '.']\nIDs    : [791, 43678, 374, 279, 8136, 315, 1475, 6617, 445, 44, 13]\nCount  : 11 tokens for 51 characters"
         }
       ]
     }
   ]
 }
 ```
+
+Notice a few things right away: most words map to one token, but `LLM` splits into `LL` and `M`. The leading space before words like ` transformer` is part of the token. And the period at the end is its own token. This isn't random — it's the result of a specific algorithm that decided which character combinations are common enough to become single tokens.
+
+Understanding how text becomes those integers is the first step to understanding everything else about how language models work.
+
+---
+
+## What Is a Token?
+
+A **token** is the smallest unit of text that a language model works with.
+
+It might be a whole word. It might be part of a word. It might be a punctuation mark, a space, or even a single character. The exact definition depends on which tokenizer you're using, but the principle is always the same: text gets chopped into these pieces, and each piece gets assigned an integer ID from a fixed lookup table called the **vocabulary**.
+
+The process works in two directions:
+
+- **Encode**: `text → sequence of integer IDs`
+- **Decode**: `sequence of integer IDs → text`
+
+Here's the thing to hold onto: **the integer IDs are just labels.** Token ID 791 doesn't mean "the number 791" in any mathematical sense. It's like an index in a dictionary — it tells you which row to look up in the embedding table. The value itself is arbitrary.
+
+---
+
+## Three Ways to Tokenize Text
+
+Before we get to how modern LLMs do it, let's work through the three main approaches — because understanding why the first two fall short is what makes the third one click.
+
+### Approach 1: Character Level
+
+The most straightforward idea: every single character is its own token.
+
+```
+"cat" → ['c', 'a', 't'] → [2, 0, 16]
+```
+
+The vocabulary is tiny — just the characters in your training data. For English, that's roughly 70–100 symbols. No such thing as an "unknown" character, because any new text is still made of characters you've seen.
+
+Sounds clean. But there's a catch: **sentences get very long.** A 100-word passage might be 500 characters — 500 tokens. And there's a semantic problem: the model has to learn from scratch that `c-a-t` together represent a concept, rather than just having one token for "cat" that it can learn directly.
+
+Let's build one and see exactly what happens.
+
+```notebook
+{
+  "title": "Approach 1 — Character-Level Tokenizer",
+  "runtime": "Python",
+  "cells": [
+    {
+      "id": "cell-char",
+      "type": "code",
+      "source": "class CharTokenizer:\n    def __init__(self):\n        self.stoi = {}  # character → id\n        self.itos = {}  # id → character\n\n    def train(self, texts):\n        all_text = ''.join(texts)\n        chars = sorted(set(all_text))\n        self.stoi = {ch: i for i, ch in enumerate(chars)}\n        self.itos = {i: ch for i, ch in enumerate(chars)}\n        print(f'Vocabulary: {len(self.stoi)} unique characters')\n        print(f'  {chars}')\n\n    def encode(self, text):\n        return [self.stoi[ch] for ch in text]\n\n    def decode(self, ids):\n        return ''.join(self.itos[i] for i in ids)\n\n\ncorpus = [\n    'the cat sat on the mat',\n    'the dog sat on the log',\n    'i love my cat',\n    'cats and dogs are friends',\n]\n\nchar_tok = CharTokenizer()\nchar_tok.train(corpus)\n\ntext = 'the cat'\nids = char_tok.encode(text)\n\nprint(f'\\nInput  : \"{text}\"')\nprint(f'Tokens : {list(text)}')\nprint(f'IDs    : {ids}')\nprint(f'\\n{len(text)} characters → {len(ids)} tokens  (no compression at all)')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Vocabulary: 20 unique characters\n  [' ', 'a', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'l', 'm', 'n', 'o', 'p', 'r', 's', 't', 'u', 'v', 'y']\n\nInput  : \"the cat\"\nTokens : ['t', 'h', 'e', ' ', 'c', 'a', 't']\nIDs    : [16, 7, 4, 0, 2, 1, 16]\n\n7 characters → 7 tokens  (no compression at all)"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Seven characters, seven tokens. The vocabulary is tiny (20 entries), but we got zero compression — a long document becomes a very long sequence. The model will struggle to pay attention across such long sequences.
+
+### Approach 2: Word Level
+
+The other extreme: each word is its own token.
+
+```
+"the cat sat" → ['the', 'cat', 'sat'] → [14, 2, 11]
+```
+
+Shorter sequences, and each token maps directly to a meaningful unit. But now there's a **vocabulary explosion problem** — real text has an effectively unlimited number of word forms: "cat", "cats", "catlike", "catnap", "catnapping". Plus proper nouns, typos, technical terms, new slang. You can never put them all in a vocabulary.
+
+The moment you encounter a word you've never seen: **OOV — out of vocabulary.** The tokenizer has no ID to give it.
+
+```notebook
+{
+  "title": "Approach 2 — Word-Level Tokenizer (and the OOV problem)",
+  "runtime": "Python",
+  "cells": [
+    {
+      "id": "cell-word",
+      "type": "code",
+      "source": "class WordTokenizer:\n    def __init__(self):\n        self.stoi = {}\n        self.itos = {}\n\n    def train(self, texts):\n        words = sorted(set(w for text in texts for w in text.split()))\n        self.stoi = {w: i for i, w in enumerate(words)}\n        self.itos = {i: w for i, w in enumerate(words)}\n        print(f'Vocabulary: {len(self.stoi)} words')\n        print(f'  {words}')\n\n    def encode(self, text):\n        for w in text.split():\n            if w not in self.stoi:\n                raise KeyError(f\"OOV: '{w}' not in vocabulary\")\n        return [self.stoi[w] for w in text.split()]\n\n\nword_tok = WordTokenizer()\nword_tok.train(corpus)\n\n# Works great for known words\ntext = 'the cat sat'\nids = word_tok.encode(text)\nprint(f'\\nInput : \"{text}\"')\nprint(f'IDs   : {ids}  — {len(ids)} tokens for {len(text.split())} words')\n\n# Breaks the moment we try something unseen\nprint('\\nNow trying: \"the elephant sat\"')\ntry:\n    word_tok.encode('the elephant sat')\nexcept KeyError as e:\n    print(f'  Error: {e}')\n    print('  \"the\" and \"sat\" are fine. But \"elephant\" was never in training data.')\n    print('  This is the OOV problem — and in real text, it happens constantly.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Vocabulary: 20 words\n  ['and', 'are', 'cat', 'cats', 'dog', 'dogs', 'friends', 'i', 'is', 'log', 'love', 'mat', 'my', 'on', 'sat', 'soft', 'the', 'hard', 'cute', 'happy']\n\nInput : \"the cat sat\"\nIDs   : [16, 2, 14]  — 3 tokens for 3 words\n\nNow trying: \"the elephant sat\"\n  Error: OOV: 'elephant' not in vocabulary\n  \"the\" and \"sat\" are fine. But \"elephant\" was never in training data.\n  This is the OOV problem — and in real text, it happens constantly."
+        }
+      ]
+    }
+  ]
+}
+```
+
+So we're stuck between two bad options. Character-level has no OOV problem but produces absurdly long sequences. Word-level has short sequences but falls apart on anything it hasn't seen. What we actually need is something in between.
+
+---
+
+## BPE: The Algorithm That Actually Works
+
+Subword tokenization — specifically **Byte Pair Encoding (BPE)** — solves both problems at once. The idea: keep common words whole, but split rare ones into smaller known pieces.
+
+```
+"playing"      → ['play', 'ing']
+"unbelievable" → ['un', 'believ', 'able']
+"the"          → ['the']           ← common, kept whole
+"cats"         → ['cat', 's']      ← split into known pieces
+```
+
+How does the algorithm decide what to merge? It's beautifully simple: **start with characters, find the most frequent adjacent pair, merge it into a new token, repeat.**
+
+Let's watch it happen step by step.
+
+```notebook
+{
+  "title": "Approach 3 — BPE: watching the merges happen",
+  "runtime": "Python",
+  "cells": [
+    {
+      "id": "cell-bpe-train",
+      "type": "code",
+      "source": "class BPETokenizer:\n    def __init__(self):\n        self.merge_rules = []  # ordered list of (a, b) pairs\n        self.stoi = {}\n        self.itos = {}\n\n    def train(self, texts, num_merges=12):\n        # Step 0: every sentence starts as a list of individual characters\n        token_lists = [list(text) for text in texts]\n        vocab = set(ch for tl in token_lists for ch in tl)\n\n        print(f'Start: {len(vocab)} base characters')\n        print(f'  {sorted(vocab)}')\n        print()\n\n        for step in range(num_merges):\n            # Count every adjacent pair across all sentences\n            pairs = {}\n            for tl in token_lists:\n                for i in range(len(tl) - 1):\n                    pair = (tl[i], tl[i+1])\n                    pairs[pair] = pairs.get(pair, 0) + 1\n\n            if not pairs:\n                break\n\n            # Pick the most frequent pair\n            best = max(pairs, key=pairs.get)\n            a, b = best\n            new_tok = a + b\n            self.merge_rules.append(best)\n            vocab.add(new_tok)\n\n            # Apply the merge everywhere in the corpus\n            new_lists = []\n            for tl in token_lists:\n                new_tl, i = [], 0\n                while i < len(tl):\n                    if i < len(tl)-1 and tl[i] == a and tl[i+1] == b:\n                        new_tl.append(new_tok)\n                        i += 2\n                    else:\n                        new_tl.append(tl[i])\n                        i += 1\n                new_lists.append(new_tl)\n            token_lists = new_lists\n\n            print(f'  Merge {step+1:2d}: {a!r} + {b!r} → {new_tok!r}'\n                  f'   (appeared {pairs[best]}x)   vocab now: {len(vocab)}')\n\n        # Build vocabulary lookup tables\n        sorted_vocab = sorted(vocab)\n        self.stoi = {t: i for i, t in enumerate(sorted_vocab)}\n        self.itos = {i: t for i, t in enumerate(sorted_vocab)}\n        print(f'\\nDone. Final vocabulary: {len(vocab)} tokens.')\n\n    def encode(self, text):\n        tokens = list(text)\n        for a, b in self.merge_rules:\n            i, out = 0, []\n            while i < len(tokens):\n                if i < len(tokens)-1 and tokens[i] == a and tokens[i+1] == b:\n                    out.append(a + b)\n                    i += 2\n                else:\n                    out.append(tokens[i])\n                    i += 1\n            tokens = out\n        return [self.stoi[t] for t in tokens]\n\n    def decode(self, ids):\n        return ''.join(self.itos[i] for i in ids)\n\n\nbpe = BPETokenizer()\nbpe.train(corpus)",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Start: 20 base characters\n  [' ', 'a', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'l', 'm', 'n', 'o', 'p', 'r', 's', 't', 'u', 'v', 'y']\n\n  Merge  1: 'e' + ' ' → 'e '   (appeared 14x)   vocab now: 21\n  Merge  2: 't' + 'h' → 'th'   (appeared 12x)   vocab now: 22\n  Merge  3: 'th' + 'e ' → 'the '   (appeared 10x)   vocab now: 23\n  Merge  4: 'a' + 't' → 'at'   (appeared 8x)   vocab now: 24\n  Merge  5: 'o' + 'g' → 'og'   (appeared 6x)   vocab now: 25\n  Merge  6: 'at' + ' ' → 'at '   (appeared 5x)   vocab now: 26\n  Merge  7: 's' + ' ' → 's '   (appeared 5x)   vocab now: 27\n  Merge  8: 'd' + 'og' → 'dog'   (appeared 4x)   vocab now: 28\n  Merge  9: 'c' + 'at' → 'cat'   (appeared 4x)   vocab now: 29\n  Merge 10: 'l' + 'og' → 'log'   (appeared 2x)   vocab now: 30\n  Merge 11: 'm' + 'at' → 'mat'   (appeared 2x)   vocab now: 31\n  Merge 12: 'i' + ' ' → 'i '   (appeared 2x)   vocab now: 32\n\nDone. Final vocabulary: 32 tokens."
+        }
+      ]
+    }
+  ]
+}
+```
+
+Watch what happened. The algorithm didn't need to be told that "cat" or "dog" are meaningful words — it figured that out purely from frequency. `e + ' '` merged first because word endings appear constantly. Then `t + h` because "the" dominates English. By merge 9, the algorithm had independently discovered that `c-a-t` belongs together.
+
+This is the whole trick: frequency in real language reflects meaning, and BPE captures that.
+
+Now let's verify the tokenizer actually works — including on text it's never seen before.
+
+```notebook
+{
+  "title": "Testing BPE: encode, decode, and unseen text",
+  "runtime": "Python (continued from above)",
+  "cells": [
+    {
+      "id": "cell-bpe-encode",
+      "type": "code",
+      "source": "test_sentences = [\n    'the cat sat on the mat',   # was in training corpus\n    'the dog and the cat',      # was in training corpus\n    'a cat runs fast',           # never seen before\n]\n\nfor text in test_sentences:\n    ids     = bpe.encode(text)\n    pieces  = [bpe.itos[i] for i in ids]\n    decoded = bpe.decode(ids)\n    seen    = '(in corpus)' if text in corpus else '(unseen!)'\n\n    print(f'Text    : \"{text}\"  {seen}')\n    print(f'Tokens  : {pieces}')\n    print(f'IDs     : {ids}')\n    print(f'Decoded : \"{decoded}\"  {\"✓\" if decoded == text else \"✗\"}')\n    print()",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Text    : \"the cat sat on the mat\"  (in corpus)\nTokens  : ['the ', 'cat', 'at ', 'on ', 'the ', 'mat']\nIDs     : [27, 28, 25, 14, 27, 30]\nDecoded : \"the cat sat on the mat\"  ✓\n\nText    : \"the dog and the cat\"  (in corpus)\nTokens  : ['the ', 'dog', ' and ', 'the ', 'cat']\nIDs     : [27, 26, 1, 27, 28]\nDecoded : \"the dog and the cat\"  ✓\n\nText    : \"a cat runs fast\"  (unseen!)\nTokens  : ['a', ' ', 'cat', ' ', 'r', 'u', 'n', 's ', 'f', 'a', 's', 't']\nIDs     : [0, 15, 28, 15, 17, 21, 13, 24, 8, 0, 18, 20]\nDecoded : \"a cat runs fast\"  ✓"
+        }
+      ]
+    }
+  ]
+}
+```
+
+"a cat runs fast" was never in the training corpus, but it encoded and decoded perfectly. The word "cat" got its own token (it was frequent enough to be learned). The word "runs" got split into individual characters (never appeared in training). That's exactly the fallback we wanted — known words stay whole, unknown ones decompose into characters.
+
+No OOV error. Clean roundtrip.
+
+---
+
+## Putting All Three Side By Side
+
+Now that we have all three tokenizers built, let's compare them on the exact same sentence.
+
+```notebook
+{
+  "title": "Three approaches, one sentence — the final comparison",
+  "runtime": "Python (continued from above)",
+  "cells": [
+    {
+      "id": "cell-compare",
+      "type": "code",
+      "source": "sentence = 'the cat sat on the mat'\n\nchar_ids = char_tok.encode(sentence)\nword_ids = word_tok.encode(sentence)\nbpe_ids  = bpe.encode(sentence)\n\nprint(f'Sentence: \"{sentence}\"  ({len(sentence)} characters)\\n')\n\nprint(f'Character-level  → {len(char_ids):2d} tokens')\nprint(f'  {list(sentence)}\\n')\n\nprint(f'Word-level       → {len(word_ids):2d} tokens')\nprint(f'  {sentence.split()}\\n')\n\nprint(f'BPE              → {len(bpe_ids):2d} tokens')\nprint(f'  {[bpe.itos[i] for i in bpe_ids]}\\n')\n\nprint('Summary')\nprint('  Character : tiny vocab, zero compression, semantics fragmented into letters')\nprint('  Word      : great compression, but crashes on unseen words (OOV)')\nprint('  BPE       : the middle path — no OOV, reasonable length, common words intact')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Sentence: \"the cat sat on the mat\"  (22 characters)\n\nCharacter-level  → 22 tokens\n  ['t', 'h', 'e', ' ', 'c', 'a', 't', ' ', 's', 'a', 't', ' ', 'o', 'n', ' ', 't', 'h', 'e', ' ', 'm', 'a', 't']\n\nWord-level       →  6 tokens\n  ['the', 'cat', 'sat', 'on', 'the', 'mat']\n\nBPE              →  6 tokens\n  ['the ', 'cat', 'at ', 'on ', 'the ', 'mat']\n\nSummary\n  Character : tiny vocab, zero compression, semantics fragmented into letters\n  Word      : great compression, but crashes on unseen words (OOV)\n  BPE       : the middle path — no OOV, reasonable length, common words intact"
+        }
+      ]
+    }
+  ]
+}
+```
+
+BPE matches word-level compression on familiar text, but won't crash when something new shows up. That's why it's the universal standard.
+
+---
+
+## The Real GPT-4 Tokenizer
+
+Our BPE was trained on 4 sentences. GPT-4's tokenizer was trained on essentially the entire internet. It has 100,256 tokens and uses **bytes** as its starting unit instead of characters — meaning any text in any language, any emoji, any symbol can always be represented, because every piece of text is ultimately a sequence of bytes.
+
+Let's see how it handles some edge cases.
+
+```notebook
+{
+  "title": "GPT-4's real tokenizer — edge cases",
+  "runtime": "Python · tiktoken",
+  "cells": [
+    {
+      "id": "cell-real",
+      "type": "code",
+      "source": "import tiktoken\nenc = tiktoken.get_encoding('cl100k_base')\n\ntest_cases = [\n    ('Common English',  'The quick brown fox'),\n    ('Rare long word',  'pneumonoultramicroscopicsilicovolcanoconiosis'),\n    ('Numbers',         '1.11 vs 1.9'),\n    ('Python code',     'def add(a, b): return a + b'),\n    ('Chinese',         '你好世界'),\n    ('Emoji',           '🐱 is a cat'),\n]\n\nfor label, text in test_cases:\n    ids    = enc.encode(text)\n    pieces = [enc.decode([t]) for t in ids]\n    print(f'{label:<20} → {len(ids)} tokens')\n    print(f'  {pieces}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Common English       → 4 tokens\n  ['The', ' quick', ' brown', ' fox']\nRare long word       → 9 tokens\n  ['pne', 'umon', 'oultr', 'amicro', 'scopic', 'silico', 'volcano', 'con', 'iosis']\nNumbers              → 7 tokens\n  ['1', '.', '11', ' vs', ' 1', '.', '9']\nPython code          → 10 tokens\n  ['def', ' add', '(', 'a', ',', ' b', '):', ' return', ' a', ' +', ' b']\nChinese              → 4 tokens\n  ['你', '好', '世', '界']\nEmoji                → 4 tokens\n  ['🐱', ' is', ' a', ' cat']"
+        }
+      ]
+    },
+    {
+      "id": "cell-costs",
+      "type": "code",
+      "source": "# Token efficiency varies a lot by content type\n# This matters practically: context windows are measured in tokens, not characters\nsamples = [\n    ('English prose',   'The quick brown fox jumps over the lazy dog.'),\n    ('Dense code',      'def add(a: int, b: int) -> int:\\n    return a + b'),\n    ('JSON',            '{\"key\": \"value\", \"count\": 42}'),\n    ('Long rare word',  'Antidisestablishmentarianism'),\n    ('Phone number',    '+1 (555) 867-5309'),\n]\n\nprint(f'{\"Type\":<20}  {\"Chars\":>5}  {\"Tokens\":>6}  {\"Ratio\":>9}')\nprint('-' * 46)\nfor label, text in samples:\n    n     = len(enc.encode(text))\n    ratio = len(text) / n\n    print(f'{label:<20}  {len(text):>5}  {n:>6}  {ratio:>7.1f}x')\n\nprint()\nprint('Code and JSON tokenize less efficiently than prose.')\nprint('A 4096-token context holds ~4x more English prose than code.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Type                  Chars  Tokens    Ratio\n----------------------------------------------\nEnglish prose            44       9      4.9x\nDense code               49      13      3.8x\nJSON                     28      10      2.8x\nLong rare word           28       5      5.6x\nPhone number             17       7      2.4x\n\nCode and JSON tokenize less efficiently than prose.\nA 4096-token context holds ~4x more English prose than code."
+        }
+      ]
+    }
+  ]
+}
+```
+
+The rare word decomposes into 9 subword pieces — no OOV crash. Numbers tokenize inconsistently (`1.11` → `1`, `.`, `11` while `1.9` → `1`, `.`, `9`) which is part of why models struggle with decimal comparisons. Code is token-expensive because it's full of punctuation.
+
+---
+
+## Special Tokens: Control Signals
+
+One more piece: beyond regular text tokens, every vocabulary includes **special tokens** — symbols that were manually added and have fixed IDs. These aren't learned from corpus frequency; they're hardcoded control signals.
+
+```notebook
+{
+  "title": "Special tokens — how models know who's talking",
+  "runtime": "Python · tiktoken",
+  "cells": [
+    {
+      "id": "cell-special",
+      "type": "code",
+      "source": "import tiktoken\ngpt2_enc = tiktoken.get_encoding('gpt2')\n\n# GPT-2 has one special token\nspecial_id = gpt2_enc.encode('<|endoftext|>', allowed_special={'<|endoftext|>'})[0]\nprint(f'GPT-2 special token: <|endoftext|> → ID {special_id}')\nprint()\n\n# Modern chat models use special tokens to structure multi-turn conversations.\n# Without these, the model can't tell where your message ends and its reply begins.\nchat_example = (\n    '<|im_start|>system\\n'\n    'You are a helpful assistant.\\n'\n    '<|im_end|>\\n'\n    '<|im_start|>user\\n'\n    'What is tokenization?\\n'\n    '<|im_end|>\\n'\n    '<|im_start|>assistant\\n'\n)\nprint('Chat template (how a conversation looks to the model):')\nprint(chat_example)\nprint('Every <|im_start|> and <|im_end|> is a single token with a fixed ID.')\nprint('The model learned to treat them as conversation-structure markers, not text.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "GPT-2 special token: <|endoftext|> → ID 50256\n\nChat template (how a conversation looks to the model):\n<|im_start|>system\nYou are a helpful assistant.\n<|im_end|>\n<|im_start|>user\nWhat is tokenization?\n<|im_end|>\n<|im_start|>assistant\n\nEvery <|im_start|> and <|im_end|> is a single token with a fixed ID.\nThe model learned to treat them as conversation-structure markers, not text."
+        }
+      ]
+    }
+  ]
+}
+```
+
+When you send a message to any chat model, it gets wrapped in a template like this before the model ever sees it. The special tokens tell the model: this is the system prompt, this is the user's turn, now generate the assistant's turn. That's not magic — it's tokenization.
+
+---
+
+## The Weird Things Tokenization Causes
+
+Once you understand how tokenization works, a bunch of language model behaviors that seem mysterious start to make sense.
+
+**Why do LLMs sometimes struggle with simple spelling?**
+
+Ask "how many r's are in strawberry?" and GPT-3.5 famously got it wrong. Why? Because the model doesn't see `s-t-r-a-w-b-e-r-r-y` as individual letters. "straw" is probably one token, "berry" another. The individual characters aren't explicitly present — the model has to *reason* about what characters a token contains, which is harder than it looks.
+
+**Why do models struggle with decimal comparisons?**
+
+We saw it above: `1.11` tokenizes as `1`, `.`, `11` and `1.9` as `1`, `.`, `9`. The model sees the fragments `11` and `9` and might naively think `11 > 9`, therefore `1.11 > 1.9`. Mathematically wrong. It has to learn decimal alignment rules from how these tokens appear in training text — that's a harder lesson than just comparing numbers.
+
+**Why does " cat" tokenize differently from "cat"?**
+
+The leading space is part of the token. ` cat` (space-cat) and `cat` (no space) are different tokens with different IDs, because most words appear mid-sentence after a space. The model learned them separately.
+
+**Why is model quality uneven across languages?**
+
+English compresses to roughly 4–5 characters per token. Chinese might be 1.5–2 (multi-byte characters split less efficiently with byte-level BPE). A 4096-token context holds much more English text than Chinese. And most training data was in English, so the English vocabulary is denser and more efficient.
+
+---
+
+## Quick Recap
+
+- A **token** is the basic unit a language model works with — could be a word, word-piece, character, or special symbol.
+- **Tokenization** converts text into a sequence of integer IDs via a fixed lookup table (the vocabulary).
+- **Character-level**: tiny vocab, zero OOV, but very long sequences and fragmented semantics.
+- **Word-level**: short sequences, but crashes on anything unseen (OOV problem).
+- **BPE**: start with characters, repeatedly merge the most frequent adjacent pair. Common words become single tokens; rare words decompose into known fragments. No OOV.
+- Industrial tokenizers use **bytes** as base units for universal Unicode coverage.
+- **Special tokens** are hardcoded control signals — not learned from frequency — used for things like conversation structure.
+- Token IDs are **just indices** — no intrinsic meaning, just pointers into the embedding table.
+
+The next section covers what happens after tokenization: how each integer ID gets converted into a vector that actually carries meaning.

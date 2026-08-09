@@ -1,3 +1,45 @@
+/* ─── Shiki syntax highlighting — notebook cells ─────────────────────────────
+   Shiki defaultColor:false puts --shiki-light and --shiki-dark as inline CSS
+   vars on every <span>.  We activate the correct one by setting `color` to
+   whichever var matches the current theme.  One <pre> block, two color sets.
+──────────────────────────────────────────────────────────────────────────── */
+
+.nb-shiki-source {
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* Strip Shiki's own background/padding — nb-source--code handles the bg */
+.nb-shiki-source .shiki {
+  background: transparent !important;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  font-family: var(--nb-font-mono);
+  font-size: var(--nb-font-size);
+  line-height: 1.65;
+}
+
+.nb-shiki-source .shiki code {
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Activate the light-theme colours on every span */
+html:not(.dark) .nb-shiki-source .shiki span {
+  color: var(--shiki-light) !important;
+}
+
+/* Activate the dark-theme colours on every span */
+html.dark .nb-shiki-source .shiki span {
+  color: var(--shiki-dark) !important;
+}
+
+/* Match cell background to Shiki theme so it feels native */
+html:not(.dark) .nb-root .nb-source--code { background: #ffffff; }
+html.dark       .nb-root .nb-source--code { background: #0d1117; }
+
 /* ─────────────────────────────────────────────────────────────────────────────
    Notebook (Colab-style) component styles
    Uses --fd-* tokens so it inherits light/dark automatically.
@@ -458,6 +500,51 @@
   padding: 0;
   border-radius: 0;
   font-size: inherit;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Shiki dual-theme syntax highlighting (prose code blocks)
+   Shiki defaultColor:false puts --shiki-light / --shiki-dark as inline CSS vars
+   on every <span>.  Set `color` to the right var to activate the correct theme.
+───────────────────────────────────────────────────────────────────────────── */
+
+/* Shiki outer wrapper — matches .md pre aesthetics */
+.md .shiki-wrapper {
+  @apply my-4 rounded-xl border overflow-hidden shadow-sm;
+}
+
+/* The <pre> shiki emits — remove default prose styles */
+.md .shiki-wrapper pre {
+  @apply m-0 p-4 overflow-auto rounded-none border-0 shadow-none bg-transparent;
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
+/* Remove background from inner code so the pre bg shows */
+.md .shiki-wrapper pre code {
+  @apply bg-transparent border-0 p-0 rounded-none text-xs;
+  font-size: inherit;
+}
+
+/* Activate light colours on every span in light mode */
+html:not(.dark) .md .shiki-wrapper .shiki span {
+  color: var(--shiki-light) !important;
+}
+
+/* Activate dark colours on every span in dark mode */
+html.dark .md .shiki-wrapper .shiki span {
+  color: var(--shiki-dark) !important;
+}
+
+/* Wrapper background synced to the active Shiki theme */
+html:not(.dark) .md .shiki-wrapper {
+  background-color: #ffffff;
+  border-color: #d0d7de;
+}
+
+html.dark .md .shiki-wrapper {
+  background-color: #0d1117;
+  border-color: #30363d;
 }
 
 @layer base {

@@ -1,35 +1,108 @@
 ---
 title: 1. Why Computers Can't Understand Language
-lastUpdatedDate: '2026-08-08'
+lastUpdatedDate: '2026-08-09'
 ---
 
 # 1. Why Computers Can't Understand Language
 
-## The Problem: Language is Not Numbers
+Here's a fun question to start with: what does a computer actually *do*?
 
-Computers are fundamentally numerical machines. Everything they do—from arithmetic to graphics rendering—ultimately comes down to manipulating numbers. Yet human language is fundamentally symbolic. The word "cat" is not a number; it's a sequence of letters that humans agree represents a furry feline animal.
+Strip away everything — the browser, the apps, the pretty UI — and at the lowest level, a computer is a machine that does arithmetic on numbers. That's it. Addition, multiplication, comparison. Over and over, billions of times a second. Every video you've ever watched, every game you've ever played, every message you've ever sent — somewhere deep down, it was all numbers being shuffled around in precise ways.
 
-This creates a profound gap: **how do we bridge the symbolic nature of language with the numerical nature of computation?**
+So here's the problem: **language is not numbers.**
 
-Consider what happens when you ask a computer to determine if two words are similar:
-- A human instantly knows "cat" and "kitten" are related
-- A computer only sees different sequences of bytes
-- A computer cannot inherently understand that both refer to similar concepts
+The word "cat" is not a number. It's a sequence of symbols — c, a, t — that humans collectively agree represents a small furry creature that knocks things off tables. The word "dog" is also not a number. And somehow, despite neither of them being numbers, humans instantly know those two words refer to related concepts. Animals. Pets. Things that make noise and require feeding.
 
-## Why Raw Text Won't Work
+Computers have no such intuition. A computer that sees the letter sequence `c-a-t` and the letter sequence `d-o-g` sees... two different letter sequences. That's it. There's nothing inherent in those letters that says "these two things are in the same category."
 
-You might think we could simply convert each letter to its ASCII code and pass that to a model. The letter 'c' becomes 99, 'a' becomes 97, and 't' becomes 116. But this approach has critical problems:
+This is the core problem that the entire field of natural language processing — and modern LLMs — was built to solve.
 
-1. **No semantic meaning**: The sequence [99, 97, 116] contains no information about what a cat is
-2. **Variable length**: Different words have different numbers of characters, making uniform processing difficult
-3. **No relationships**: There's nothing in these numbers that tells us 'c', 'a', and 't' form a meaningful unit together
-4. **No generalization**: The computer has no way to know that 'cat' and 'dog' are both animals
+---
 
-## The Solution: Numerical Representations
+## The Naive Approach (And Why It Doesn't Work)
 
-Instead of trying to process raw text, we need to represent **meaning** numerically. This means:
-- Converting text into fixed-size numerical vectors
-- Ensuring these vectors encode semantic and syntactic information
-- Creating a space where similar concepts have similar numerical representations
+The most obvious thing you might try: just convert each letter to a number. Which is actually exactly what computers already do. The letter `A` is stored as the number 65. `B` is 66. `a` is 97. This system is called ASCII (American Standard Code for Information Interchange), and it's been around since the 1960s.
 
-This is the core insight that makes modern language models possible: **if we can represent language as numbers in a clever way, we can use mathematical operations to understand and generate language.**
+So the word `cat` becomes `[99, 97, 116]`. The word `dog` becomes `[100, 111, 103]`.
+
+Now here's a question: are these similar numbers? Is `[99, 97, 116]` close to `[100, 111, 103]`?
+
+Not really. And there's absolutely nothing in those numbers that tells you "hey, both of these are animals." The number 99 has no relationship to the concept of "cat." It's just an arbitrary ID someone assigned to the letter `c` decades ago.
+
+This is problem number one: **ASCII codes carry no meaning.** They're labels, not representations. The number 99 for `c` is exactly as arbitrary as if we'd assigned it 7 or 482. The choice of number tells you nothing about the letter's meaning, its sound, or what concepts it typically appears with.
+
+There's also problem number two: **words have variable length.** The word `cat` is 3 letters. The word `elephantine` is 11 letters. If you want to process words with a neural network, you generally need inputs of a fixed size. You can't just feed it `[99, 97, 116]` sometimes and `[101, 108, 101, 112, 104, 97, 110, 116, 105, 110, 101]` other times — the network doesn't know what to do with variable-length inputs.
+
+And problem number three: **there's no relationship encoded between words.** `cat` and `kitten` are very related concepts — a kitten is literally just a baby cat. But their ASCII representations, `[99, 97, 116]` and `[107, 105, 116, 116, 101, 110]`, share almost nothing in common. How is a computer supposed to know these words are related?
+
+---
+
+## What We Actually Need
+
+Let's think about what a *good* numerical representation of language would look like.
+
+It would be **fixed size** — every word (or word-piece) gets a vector of the same length. This makes it easy to do consistent mathematical operations.
+
+It would be **semantically meaningful** — words with similar meanings would have similar numbers. `cat` and `kitten` would be "close" in some mathematical sense. `cat` and `democracy` would be far apart.
+
+It would **encode relationships** — if you do arithmetic on these vectors, you'd get sensible results. This is where things get genuinely beautiful: in well-trained representations, you can compute things like:
+
+```
+embedding("king") - embedding("man") + embedding("woman") ≈ embedding("queen")
+```
+
+The difference between "king" and "man" captures the concept of royalty. Adding "woman" gives you a female person with that royal offset. The math somehow corresponds to actual conceptual relationships. That's not obvious — that's remarkable.
+
+It would be **learnable** — instead of trying to hand-craft the perfect numerical representation (which nobody knows how to do), we'd learn these representations from data. Show the system enough text, let it adjust the numbers until the representations work well for predicting language, and the meaning emerges naturally.
+
+This is exactly what modern language models do. But to get there, we need to first answer a more basic question: what exactly do we represent?
+
+---
+
+## Words? Characters? Something Else?
+
+You might think the natural unit to represent is the word. One vector per word. "cat" gets vector #1, "dog" gets vector #2, "the" gets vector #3, and so on.
+
+This actually works reasonably well! And early neural language models did exactly this. But it has a practical problem: how many vectors do you need?
+
+The English language has roughly 170,000 words currently in use, plus technical jargon, proper nouns, slang, and new coinages. You'd need a vector for every single one. And what about "cat", "cats", "catlike", "catnap", "catnip"? Are these all separate words requiring separate vectors? What about words you've never seen before — like a person's name, or a chemical compound, or a newly invented term?
+
+The word-level approach has an **out-of-vocabulary problem**: anything you haven't explicitly given a vector gets treated as "unknown." And in real-world text, unknown words are everywhere.
+
+You could go the other direction: represent individual characters. `a`, `b`, `c`... that's only about 26 letters (in English), plus punctuation. No out-of-vocabulary problem! But now a single word takes many tokens, and a sentence takes hundreds. The model has to learn that the sequence `c-a-t` represents a concept, rather than just learning the concept directly.
+
+Modern language models use a middle path, called **subword tokenization**. It represents text as pieces — some whole words, some fragments of words, some individual characters — chosen in a way that balances vocabulary size against coverage. Frequently used words like "the" or "is" get their own token. Rarer words like "hippopotamus" might be split into pieces like "hippo" + "pot" + "amus". Completely unseen character combinations can always be handled because you can fall back to individual characters.
+
+This tokenization step is the very first thing that happens when you send a message to any language model. Your text goes in, and the model immediately breaks it into tokens — those subword pieces — and converts each one to an integer ID.
+
+That integer ID is just a label. It still carries no meaning.
+
+The meaning comes from the next step: **embeddings**. Each token ID gets looked up in a big table — the embedding matrix — and retrieved as a high-dimensional vector. Those vectors are what the model actually works with. And crucially, those vectors are *learned* during training, so they end up carrying genuine semantic information.
+
+---
+
+## Why This Matters for Everything Else
+
+If you've ever been confused about why language models sometimes make strange errors — treating numbers as if they're text, failing at simple arithmetic, not knowing what time it is — a lot of those behaviors trace back to this section.
+
+A language model doesn't "read" your text the way you do. It doesn't perceive words as concepts with associated meanings. It receives a sequence of integer IDs, looks each one up in a learned table, and processes the resulting vectors. The model's "understanding" is entirely a consequence of patterns in those learned vectors — patterns that emerged from seeing enormous amounts of text.
+
+That's powerful. But it also has real limitations. The model knows that `cat` and `kitten` are similar because they appeared in similar contexts in the training data. It can perform the king/queen analogy because those vectors were shaped by millions of examples involving royalty, gender, and language. But it has no grounded experience of what a cat actually is. No sensory memory of fur or purring. Just vectors.
+
+This is the foundation of everything that follows. Before transformers, before attention mechanisms, before the billion-parameter training runs — someone had to figure out how to turn the fundamentally symbolic nature of language into something a computer can do math on. The answer they found is both simple in principle and surprisingly deep in practice.
+
+Numbers that carry meaning. Vectors learned from text. That's the whole idea.
+
+---
+
+## Before You Move On
+
+Here's a quick check on the key ideas from this section:
+
+- Computers work with numbers natively. Language is symbolic. The challenge is bridging that gap.
+- Simply using ASCII codes doesn't work — they carry no semantic meaning and words have variable length.
+- What we want: fixed-size vectors where similar concepts are "close" to each other mathematically.
+- Text is broken into **tokens** first (a process called tokenization), then each token gets looked up in a learned table to retrieve its **embedding vector**.
+- The meaning in these vectors isn't hardcoded — it *emerges* from training on massive amounts of text.
+
+The next two sections cover exactly these two steps: tokenization and embeddings. Both are simpler than they sound, and both have some genuinely surprising depth once you look closely.

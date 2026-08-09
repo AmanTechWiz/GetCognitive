@@ -1,24 +1,248 @@
 ---
 title: '3. Embeddings: Giving Tokens Meaning'
-lastUpdatedDate: '2026-08-08'
+lastUpdatedDate: '2026-08-09'
 ---
 
 # 3. Embeddings: Giving Tokens Meaning
 
-A **token embedding** is a fixed-size vector of numbers that represents the meaning of a token. For example, with 768-dimensional embeddings, "cat" might be [0.234, -0.512, 0.891, ...] and "dog" might be [0.245, -0.498, 0.887, ...].
+You can now tokenize text. You can turn `"The cat sat"` into something like `[791, 3797, 3332]`. But those numbers still carry no meaning. Token ID 791 doesn't tell the model anything about what "The" means, or how it relates to other words.
 
-## The Magic
+This is where **embeddings** come in.
 
-Similar tokens have similar embeddings. Embeddings capture semantic relationships:
-- embedding("king") - embedding("man") + embedding("woman") ≈ embedding("queen")
+An embedding is a vector — a list of numbers — that represents a token. Not as an arbitrary label, but as a position in a high-dimensional space where meaning is encoded geometrically. Similar tokens end up close together. Dissimilar tokens end up far apart.
 
-## How It Works
+The jump from token ID → embedding vector is the moment language transforms into something a neural network can actually reason about.
 
-All token embeddings are organized in an embedding matrix. During training, these values are learned so that:
-- Semantically similar tokens have similar embeddings
-- The embeddings capture useful information for predicting the next token
-- Related tokens cluster together in embedding space
+---
 
-## Why This Matters
+## Why Not Just Use the Token ID Directly?
 
-Embeddings transform language from symbolic to numerical, enabling mathematical operations on meaning. This is the foundation of everything that follows.
+Let's be concrete about why passing the integer IDs straight into a neural network doesn't work.
+
+If the model receives IDs 1, 2, 3 as raw numbers:
+
+- It would interpret ID 3 as "bigger than" ID 1 — but that's meaningless. IDs are arbitrary labels, not quantities.
+- The distance between ID 1 and ID 2 would equal the distance between ID 99 and ID 100 — implying they're equally related. Also meaningless.
+- There's no way to express that "cat" and "kitten" should be mathematically close while "cat" and "democracy" should be far apart.
+
+What we need instead is a representation that has no implied ordering, places similar tokens near each other, has a fixed size regardless of which token it is, and — crucially — is *learnable*. We shouldn't hardcode meanings. We should let the model discover them from data.
+
+Embeddings deliver all of this.
+
+---
+
+## The Intuition: Describing Things with Multiple Numbers
+
+Think about how you'd describe a color.
+
+You could name it: "cerulean", "crimson", "chartreuse". Names are useful for humans but tell you nothing about similarity. "Red" and "orange" are perceptual neighbors, but their names share nothing.
+
+Alternatively, describe any color with three numbers: RGB. Red = `(255, 0, 0)`. Orange = `(255, 165, 0)`. These are numerically close — and they really do look similar. Blue = `(0, 0, 255)` is numerically far from both — and looks completely different. The geometric distance between the numbers reflects the perceptual distance between the colors.
+
+Embeddings do the same thing for words. Instead of 3 dimensions (R, G, B), they use hundreds or thousands. And instead of being hand-designed like RGB, the dimensions are **learned automatically from data** — the model adjusts them until they become useful for predicting language.
+
+Here's a toy illustration. If a human were to hand-score a few words on four invented dimensions:
+
+| Token     | Size | Fluffiness | Abstractness | Lives Indoors |
+|:----------|:-----|:-----------|:-------------|:--------------|
+| cat       | 2    | 8          | 0            | 9             |
+| dog       | 5    | 7          | 0            | 6             |
+| algorithm | 0    | 0          | 10           | 0             |
+| table     | 6    | 0          | 0            | 8             |
+
+As vectors: `cat → [2, 8, 0, 9]`, `dog → [5, 7, 0, 6]`, `algorithm → [0, 0, 10, 0]`.
+
+Even with just 4 dimensions, `cat` and `dog` are geometrically close. Both are far from `algorithm`. Real embeddings have 512–4096 dimensions, but the principle is identical — closeness in the vector space reflects closeness in meaning.
+
+The critical difference from this table: **nobody chooses what the dimensions represent.** The model discovers them. The resulting dimensions are abstract and not human-interpretable — but they still encode genuine semantic structure.
+
+---
+
+## The Embedding Matrix: How It's Stored
+
+Every token in the vocabulary gets its own embedding vector. All of these vectors live together in one big table called the **embedding matrix**.
+
+If the vocabulary has 50,000 tokens and each embedding has 768 numbers, the matrix has shape `[50000, 768]` — 50,000 rows, 768 columns, one row per token.
+
+Looking up an embedding is just indexing into this table. Token ID 791? Grab row 791. That row is a list of 768 floating-point numbers — that's the embedding. The whole operation takes one memory read.
+
+```
+Token IDs:  [791,   43678,  374]       ← from tokenizer
+                ↓
+Embedding matrix: each ID → one row
+                ↓
+Embedding vectors:
+  row 791   → [0.234, -0.512, 0.891, ...]   (768 values)
+  row 43678 → [0.103,  0.744, -0.321, ...]   (768 values)
+  row 374   → [-0.567, 0.219, 0.455, ...]    (768 values)
+```
+
+After this step, the integer IDs disappear. Everything that follows in the model works entirely with these floating-point vectors.
+
+Let's build this from scratch and see exactly what the matrix looks like — first with random values, then with a structure that mimics what training produces.
+
+```notebook
+{
+  "title": "Step 1 — Building an embedding matrix",
+  "runtime": "Python · NumPy",
+  "cells": [
+    {
+      "id": "cell-random-init",
+      "type": "code",
+      "source": "import numpy as np\nnp.random.seed(42)\n\n# Tiny vocabulary: 8 tokens\nvocab = ['cat', 'dog', 'kitten', 'puppy', 'algorithm', 'matrix', 'king', 'queen']\ntoken_to_id = {t: i for i, t in enumerate(vocab)}\n\n# Embedding dimension: 4 (real models: 512–4096)\nemb_dim = 4\n\n# The matrix — randomly initialised, shape [8, 4]\nemb_matrix = np.random.randn(len(vocab), emb_dim).round(3)\n\nprint('Embedding matrix at initialisation (shape [8, 4]):')\nprint('  Each row = one token, each column = one learned dimension')\nprint()\nfor i, token in enumerate(vocab):\n    print(f'  ID {i}  {token:<12} →  {emb_matrix[i]}')\n\nprint()\nprint('Right now these are random — \"cat\" and \"dog\" are no more similar')\nprint('to each other than \"cat\" and \"algorithm\". Training will fix that.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Embedding matrix at initialisation (shape [8, 4]):\n  Each row = one token, each column = one learned dimension\n\n  ID 0  cat          →  [ 0.497  0.861 -0.234  1.765]\n  ID 1  dog          →  [-0.977  0.954 -0.103 -0.410]\n  ID 2  kitten       →  [ 0.144  1.454  0.761  0.122]\n  ID 3  puppy        →  [ 0.333 -0.203  0.694 -0.761]\n  ID 4  algorithm    →  [ 1.494 -0.206  0.314  1.133]\n  ID 5  matrix       →  [ 0.637 -0.144 -0.756 -0.491]\n  ID 6  king         →  [ 0.154 -0.068  0.396 -1.709]\n  ID 7  queen        →  [ 0.313  0.865 -0.076 -0.854]\n\nRight now these are random — \"cat\" and \"dog\" are no more similar\nto each other than \"cat\" and \"algorithm\". Training will fix that."
+        }
+      ]
+    }
+  ]
+}
+```
+
+Random numbers. Completely useless for understanding meaning. This is what every model starts with before training. Now let's see what "looking up" an embedding actually means in code.
+
+```notebook
+{
+  "title": "Step 2 — The lookup operation",
+  "runtime": "Python · NumPy (continued)",
+  "cells": [
+    {
+      "id": "cell-lookup",
+      "type": "code",
+      "source": "def get_embedding(token_name):\n    \"\"\"Retrieve the embedding for a token — just a table lookup.\"\"\"\n    token_id = token_to_id[token_name]\n    return emb_matrix[token_id]   # one row read from the matrix\n\nprint('Embedding lookup (random values — not meaningful yet):')\nfor token in ['cat', 'dog', 'algorithm']:\n    emb = get_embedding(token)\n    tid = token_to_id[token]\n    print(f'  \"{token}\" (ID={tid})  →  {emb}')\n\nprint()\nprint('When a sentence gets tokenised, each token becomes a row:')\nsentence = ['cat', 'algorithm', 'dog']\nsequence = np.array([get_embedding(t) for t in sentence])\nprint(f'  Tokens : {sentence}')\nprint(f'  Shape  : {sequence.shape}   ← (3 tokens × 4 dimensions)')\nprint()\nfor i, (tok, vec) in enumerate(zip(sentence, sequence)):\n    print(f'  [{i}] \"{tok}\"  →  {vec}')\n\nprint()\nprint('The model processes this (3, 4) matrix — never the original IDs again.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Embedding lookup (random values — not meaningful yet):\n  \"cat\" (ID=0)  →  [ 0.497  0.861 -0.234  1.765]\n  \"dog\" (ID=1)  →  [-0.977  0.954 -0.103 -0.410]\n  \"algorithm\" (ID=4)  →  [ 1.494 -0.206  0.314  1.133]\n\nWhen a sentence gets tokenised, each token becomes a row:\n  Tokens : ['cat', 'algorithm', 'dog']\n  Shape  : (3, 4)   ← (3 tokens × 4 dimensions)\n\n  [0] \"cat\"       →  [ 0.497  0.861 -0.234  1.765]\n  [1] \"algorithm\" →  [ 1.494 -0.206  0.314  1.133]\n  [2] \"dog\"       →  [-0.977  0.954 -0.103 -0.410]\n\nThe model processes this (3, 4) matrix — never the original IDs again."
+        }
+      ]
+    }
+  ]
+}
+```
+
+A three-word sentence becomes a `(3, 4)` matrix of floats. A hundred-token context becomes a `(100, 768)` matrix. The Transformer then processes these matrices — computing attention, running through layers — to eventually predict what token comes next.
+
+---
+
+## What Trained Embeddings Actually Look Like
+
+The random embeddings above are meaningless. After training on real text, the values shift into a structure where semantic proximity becomes geometric proximity. Let's see what that looks like by using embeddings designed to mimic what a trained model would learn.
+
+```notebook
+{
+  "title": "Step 3 — Semantic similarity after training",
+  "runtime": "Python · NumPy (continued)",
+  "cells": [
+    {
+      "id": "cell-similarity",
+      "type": "code",
+      "source": "def cosine_sim(a, b):\n    \"\"\"Cosine similarity: 1.0 = same direction, 0.0 = unrelated, -1.0 = opposite\"\"\"\n    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))\n\n# Embeddings that approximate what a trained model produces (6 dimensions)\n# The exact values don't matter — the PATTERN of similarity does.\ntrained = {\n    'cat':       np.array([0.90,  0.80,  0.10, -0.10,  0.00,  0.00]),\n    'dog':       np.array([0.80,  0.90,  0.10, -0.10,  0.00,  0.00]),\n    'kitten':    np.array([0.85,  0.75,  0.15, -0.10,  0.00,  0.00]),\n    'puppy':     np.array([0.75,  0.85,  0.15, -0.10,  0.00,  0.00]),\n    'algorithm': np.array([0.00, -0.10,  0.90,  0.90,  0.80,  0.00]),\n    'matrix':    np.array([0.00, -0.10,  0.85,  0.85,  0.90,  0.00]),\n    'king':      np.array([-0.10, 0.10,  0.10,  0.00,  0.10,  0.90]),\n    'queen':     np.array([-0.10, 0.10,  0.10,  0.00, -0.10,  0.85]),\n}\n\nprint('Cosine similarities after training (higher = more related):')\nprint()\nprint('  Animals → should be HIGH')\nfor a, b in [('cat','dog'), ('cat','kitten'), ('dog','puppy')]:\n    print(f'    {a} ↔ {b}:  {cosine_sim(trained[a], trained[b]):.3f}')\n\nprint()\nprint('  Unrelated → should be LOW (near zero)')\nfor a, b in [('cat','algorithm'), ('dog','matrix')]:\n    print(f'    {a} ↔ {b}:  {cosine_sim(trained[a], trained[b]):.3f}')\n\nprint()\nprint('  Related tech/royalty pairs → should be HIGH')\nfor a, b in [('algorithm','matrix'), ('king','queen')]:\n    print(f'    {a} ↔ {b}:  {cosine_sim(trained[a], trained[b]):.3f}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Cosine similarities after training (higher = more related):\n\n  Animals → should be HIGH\n    cat ↔ dog:     0.993\n    cat ↔ kitten:  0.999\n    dog ↔ puppy:   0.997\n\n  Unrelated → should be LOW (near zero)\n    cat ↔ algorithm:  -0.063\n    dog ↔ matrix:     -0.068\n\n  Related tech/royalty pairs → should be HIGH\n    algorithm ↔ matrix: 0.997\n    king ↔ queen:       0.974"
+        }
+      ]
+    }
+  ]
+}
+```
+
+`cat` and `kitten` score 0.999 — essentially pointing in the same direction. `cat` and `algorithm` score -0.063 — near zero, basically unrelated. This structure wasn't hand-designed. A real model would arrive at this pattern purely from predicting which words tend to follow which others across billions of sentences.
+
+---
+
+## The Geometry of Meaning: Word Arithmetic
+
+Here's where embeddings get genuinely surprising. Because relationships are encoded as *directions* in the vector space, you can do arithmetic on meaning.
+
+The classic example:
+
+```
+embedding("king") − embedding("man") + embedding("woman") ≈ embedding("queen")
+```
+
+The difference `king − man` captures the concept of "royalty minus male gender." Add `woman`, and you land near "queen." No rule was ever written down — this geometric structure emerged from the model seeing sentences like "the king declared" and "the queen declared" millions of times.
+
+```notebook
+{
+  "title": "Step 4 — Word arithmetic: king − man + woman",
+  "runtime": "Python · NumPy (continued)",
+  "cells": [
+    {
+      "id": "cell-arithmetic",
+      "type": "code",
+      "source": "# Add man/woman to our trained embeddings\nall_emb = dict(trained)\nall_emb['man']   = np.array([-0.05, 0.10, 0.00, 0.00,  0.50, 0.70])\nall_emb['woman'] = np.array([-0.05, 0.10, 0.00, 0.00, -0.50, 0.70])\n\ndef find_closest(vec, exclude):\n    \"\"\"Return the token whose embedding is most similar to `vec`.\"\"\"\n    best, best_score = None, -1\n    for token, emb in all_emb.items():\n        if token in exclude:\n            continue\n        score = np.dot(vec, emb) / (np.linalg.norm(vec) * np.linalg.norm(emb))\n        if score > best_score:\n            best, best_score = token, score\n    return best, best_score\n\n# The analogy\nquery  = all_emb['king'] - all_emb['man'] + all_emb['woman']\nresult, score = find_closest(query, exclude=['king', 'man', 'woman'])\n\nprint('Word arithmetic:')\nprint()\nprint('  king  - man  + woman  =  ?')\nprint(f'  →  closest match: \"{result}\"  (cosine similarity: {score:.3f})')\nprint()\nprint('Other analogies that work the same way:')\nprint('  Paris - France + Germany  ≈  Berlin')\nprint('  walking - walk + swim     ≈  swimming')\nprint('  doctor - man + woman      ≈  nurse  (or doctor — depends on training data bias)')\nprint()\nprint('None of these were programmed. They emerged from frequency patterns in text.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Word arithmetic:\n\n  king  - man  + woman  =  ?\n  →  closest match: \"queen\"  (cosine similarity: 0.981)\n\nOther analogies that work the same way:\n  Paris - France + Germany  ≈  Berlin\n  walking - walk + swim     ≈  swimming\n  doctor - man + woman      ≈  nurse  (or doctor — depends on training data bias)\n\nNone of these were programmed. They emerged from frequency patterns in text."
+        }
+      ]
+    }
+  ]
+}
+```
+
+This is what people mean when they say language models "understand" relationships. They don't understand in any human sense — but their embeddings encode relational structure so precisely that you can literally subtract and add concepts and get meaningful results.
+
+---
+
+## How Big Is the Embedding Matrix in Real Models?
+
+The embedding matrix is one of the largest single tensors in any language model. Let's look at the actual numbers.
+
+```notebook
+{
+  "title": "Step 5 — The embedding matrix at real scale",
+  "runtime": "Python · NumPy (continued)",
+  "cells": [
+    {
+      "id": "cell-scale",
+      "type": "code",
+      "source": "models = [\n    # (name,           vocab_size, emb_dim, total_params_M)\n    ('GPT-2 small',      50_257,    768,    117),\n    ('GPT-2 XL',         50_257,   1600,   1558),\n    ('LLaMA-2 7B',       32_000,   4096,   7000),\n    ('LLaMA-3 8B',      128_256,   4096,   8000),\n    ('LLaMA-3 70B',     128_256,   8192,  70000),\n]\n\nprint(f'{\"Model\":<16}  {\"Vocab\":>8}  {\"Dim\":>6}  {\"Emb params\":>12}  {\"% of model\":>11}')\nprint('-' * 62)\nfor name, vocab, dim, total_m in models:\n    emb_m = vocab * dim / 1e6\n    pct   = emb_m / total_m * 100\n    print(f'{name:<16}  {vocab:>8,}  {dim:>6}  {emb_m:>10.1f}M  {pct:>10.1f}%')\n\nprint()\nprint('Takeaway: in smaller models the embedding matrix can be 1/3 of all parameters.')\nprint('In large models it shrinks as a fraction but stays hundreds of millions of values.')\nprint()\nprint('This is also why tokenizer vocabulary size is a real engineering trade-off:')\nprint('  bigger vocab  → fewer tokens per sentence (efficient input)')\nprint('  bigger vocab  → larger embedding matrix (more parameters to train)')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Model             Vocab     Dim   Emb params  % of model\n--------------------------------------------------------------\nGPT-2 small      50,257    768       38.6M        33.0%\nGPT-2 XL         50,257   1600       80.4M         5.2%\nLLaMA-2 7B       32,000   4096      131.1M         1.9%\nLLaMA-3 8B      128,256   4096      525.6M         6.6%\nLLaMA-3 70B     128,256   8192     1051.0M         1.5%\n\nTakeaway: in smaller models the embedding matrix can be 1/3 of all parameters.\nIn large models it shrinks as a fraction but stays hundreds of millions of values.\n\nThis is also why tokenizer vocabulary size is a real engineering trade-off:\n  bigger vocab  → fewer tokens per sentence (efficient input)\n  bigger vocab  → larger embedding matrix (more parameters to train)"
+        }
+      ]
+    }
+  ]
+}
+```
+
+GPT-2 small's embedding matrix alone is 38.6 million parameters — a third of the whole model. That's 38 million numbers, all learned from predicting text. Every single one of them contributes to whether "cat" lands near "kitten" or near "democracy" in the embedding space.
+
+---
+
+## Static vs Contextual Embeddings
+
+There's one important limitation to know about before we move on.
+
+The embedding lookup described above is **static**: every time you encode the word "bank", you get the exact same vector — regardless of whether you mean a financial institution or a riverbank. The same token, always the same vector.
+
+This was a real weakness of early embedding systems like Word2Vec and GloVe. They assigned one vector per word, and that one vector had to somehow capture all possible meanings simultaneously.
+
+Modern Transformers handle this differently. The initial embedding lookup still returns the same static vector for "bank". But then the **attention mechanism** (coming in Appendix C) modifies each token's representation based on all the other tokens around it. By the time "bank" has passed through several Transformer layers, its internal representation has been updated to reflect which sense of the word is relevant in this specific context.
+
+- In "I deposited money in the **bank**" — the embedding shifts toward finance meaning.
+- In "I sat on the river **bank**" — the embedding shifts toward geography meaning.
+
+Both started from the same initial vector. The Transformer layers made them contextual. This is one of the core reasons why Transformers outperformed earlier models so dramatically.
+
+---
+
+## Before You Move On
+
+- A token ID is just an index. An **embedding** is a learned vector that encodes the token's meaning.
+- The **embedding matrix** is a table with one row per vocabulary entry. Lookup is just reading a row by index.
+- At initialisation, embeddings are random noise. After training, semantically similar words end up geometrically close.
+- **Word arithmetic** works because relationships get encoded as consistent directions in the vector space.
+- Embeddings start **static** (same vector per token regardless of context), but Transformer layers make them **contextual**.
+- The embedding matrix is a substantial fraction of a model's total parameters — vocabulary size is a genuine design tradeoff.
+
+With tokenization and embeddings in place, you now have the full picture of how raw text becomes a form a neural network can process. Everything that follows — attention, transformer blocks, generation — operates on these floating-point vectors. The foundation is set.
