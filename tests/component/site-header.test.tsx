@@ -1,0 +1,77 @@
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { ThemeToggle, GithubMark } from '@/components/site-header';
+
+// Mock next-themes
+vi.mock('next-themes', () => ({
+  useTheme: vi.fn(() => ({
+    resolvedTheme: 'dark',
+    setTheme: vi.fn(),
+  })),
+}));
+
+// Mock next/link (not available outside Next.js runtime)
+vi.mock('next/link', () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
+  ),
+}));
+
+// Mock next/navigation
+vi.mock('next/navigation', () => ({
+  usePathname: vi.fn(() => '/'),
+}));
+
+describe('ThemeToggle', () => {
+  it('renders Light and Dark buttons', () => {
+    render(<ThemeToggle />);
+    expect(screen.getByRole('button', { name: /light/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /dark/i })).toBeInTheDocument();
+  });
+
+  it('calls setTheme("light") when Light is clicked', async () => {
+    const { useTheme } = await import('next-themes');
+    const mockSetTheme = vi.fn();
+    vi.mocked(useTheme).mockReturnValue({
+      resolvedTheme: 'dark',
+      setTheme: mockSetTheme,
+    } as unknown as ReturnType<typeof useTheme>);
+
+    const user = userEvent.setup();
+    render(<ThemeToggle />);
+    await user.click(screen.getByRole('button', { name: /light/i }));
+    expect(mockSetTheme).toHaveBeenCalledWith('light');
+  });
+
+  it('calls setTheme("dark") when Dark is clicked', async () => {
+    const { useTheme } = await import('next-themes');
+    const mockSetTheme = vi.fn();
+    vi.mocked(useTheme).mockReturnValue({
+      resolvedTheme: 'light',
+      setTheme: mockSetTheme,
+    } as unknown as ReturnType<typeof useTheme>);
+
+    const user = userEvent.setup();
+    render(<ThemeToggle />);
+    await user.click(screen.getByRole('button', { name: /dark/i }));
+    expect(mockSetTheme).toHaveBeenCalledWith('dark');
+  });
+
+  it('applies custom className', () => {
+    const { container } = render(<ThemeToggle className="my-toggle" />);
+    expect(container.firstChild).toHaveClass('my-toggle');
+  });
+});
+
+describe('GithubMark', () => {
+  it('renders an SVG with role="img"', () => {
+    render(<GithubMark />);
+    expect(screen.getByRole('img')).toBeInTheDocument();
+  });
+
+  it('applies className to the SVG', () => {
+    render(<GithubMark className="size-4" />);
+    expect(screen.getByRole('img')).toHaveClass('size-4');
+  });
+});
