@@ -1,0 +1,11 @@
+# Prettier ignores — content/MDX files and generated artifacts
+content/**
+*.mdx
+*.md
+.next/**
+out/**
+node_modules/**
+coverage/**
+playwright-report/**
+test-results/**
+public/**

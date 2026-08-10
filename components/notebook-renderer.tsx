@@ -59,7 +59,8 @@ function OutputView({ output }: { output: CellOutput }) {
   if (output.type === 'image') {
     return (
       <div className="nb-output nb-output--image">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {/* img is intentional here — this renders base64 data URIs from notebook output */}
+        {/* eslint-disable-next-line react/no-danger */}
         <img src={output.content} alt="output" className="nb-output-img" />
       </div>
     );
