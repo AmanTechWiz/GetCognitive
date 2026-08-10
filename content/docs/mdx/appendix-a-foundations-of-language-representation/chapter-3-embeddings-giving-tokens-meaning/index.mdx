@@ -56,6 +56,14 @@ Even with just 4 dimensions, `cat` and `dog` are geometrically close. Both are f
 
 The critical difference from this table: **nobody chooses what the dimensions represent.** The model discovers them. The resulting dimensions are abstract and not human-interpretable — but they still encode genuine semantic structure.
 
+### What this looks like visually
+
+Real embeddings live in 768 or 4096 dimensions — impossible to draw directly. But if we collapse them down to 3D (a technique called t-SNE or PCA), the structure becomes visible. Words cluster by meaning: animals near animals, royalty near royalty, tech concepts near tech concepts.
+
+![Embedding space — king, queen, man, woman in vector space showing word arithmetic](/king-queen.png)
+
+> **Reading this diagram:** Each dot is one word's embedding, projected from high-dimensional space down to 3D. Words cluster by meaning. The arrows show word arithmetic: start at *king*, subtract the *man* direction, add the *woman* direction, and you land at *queen*. That's not a trick — it's a real geometric property of trained embedding spaces.
+
 ---
 
 ## The Embedding Matrix: How It's Stored
@@ -166,6 +174,12 @@ embedding("king") − embedding("man") + embedding("woman") ≈ embedding("queen
 ```
 
 The difference `king − man` captures the concept of "royalty minus male gender." Add `woman`, and you land near "queen." No rule was ever written down — this geometric structure emerged from the model seeing sentences like "the king declared" and "the queen declared" millions of times.
+
+### Cosine similarity — measuring the angle, not the distance
+
+Two vectors can point in the same direction even if one is longer. That's why we measure **angle** (cosine similarity) rather than raw distance. Two words that appear in identical contexts end up pointing the same way — regardless of how "big" their vectors are.
+
+![cat vs algorithm — cosine similarity showing similar vectors (cat/kitten) vs dissimilar (cat/algorithm)](/cat-algorithm.png)
 
 ```notebook
 {

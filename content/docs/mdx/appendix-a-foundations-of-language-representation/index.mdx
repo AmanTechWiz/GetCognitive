@@ -1,6 +1,6 @@
 ---
 title: Appendix A — Foundations of Language Representation
-description: 'How computers turn text into numbers — tokens, vocabularies, and the embeddings that give language models their understanding'
+description: 'How computers turn text into numbers — tokens, embeddings, tensors, and the math that connects it all'
 isChapterOverview: true
 lastUpdatedDate: '2026-08-09'
 ---
@@ -9,7 +9,7 @@ lastUpdatedDate: '2026-08-09'
 
 This appendix answers one question: **how does text become something a computer can think with?**
 
-At the lowest level, every language model is doing arithmetic. But language isn't arithmetic. "Cat" isn't a number. "The quick brown fox" isn't a matrix. So before any of the sophisticated stuff — attention, transformers, training — someone had to figure out how to bridge that gap. This appendix is about that bridge.
+At the lowest level, every language model is doing arithmetic on numbers organized in grids. But language isn't numbers. "Cat" isn't a number. "The quick brown fox" isn't a matrix. So before any of the sophisticated stuff — attention, transformers, training — someone had to figure out how to bridge that gap. This appendix is about that bridge.
 
 You don't need any prior experience with machine learning. If you know what a list of numbers is, you have enough background to follow everything here.
 
@@ -19,20 +19,41 @@ You don't need any prior experience with machine learning. If you know what a li
 
 **Chapter 1 — Why Computers Can't Understand Language**
 
-The fundamental problem: computers work natively with numbers, but language is symbolic. We explore why the naive approach (ASCII codes) completely fails, what a *good* numerical representation of language would need to look like, and why this question is harder than it first appears.
+The fundamental problem: computers work natively with numbers, but language is symbolic. We explore why the naive approach (ASCII codes) completely fails, what a *good* numerical representation would need to look like, and why this question is harder than it first appears.
 
 **Chapter 2 — Tokens and Tokenization**
 
-Before a model sees your text, it gets chopped into pieces called *tokens*. This chapter covers how and why — starting with the simplest possible approaches (character-level, word-level), showing exactly why each falls short, and building up to BPE (Byte Pair Encoding), the algorithm used by essentially every modern LLM. Includes an interactive notebook where you build all three tokenizers from scratch in Python.
+Before a model sees your text, it gets chopped into pieces called *tokens*. This chapter covers how and why — starting with the simplest possible approaches, showing exactly why each falls short, and building up to BPE, the algorithm used by essentially every modern LLM. Includes an interactive notebook where you build all three tokenizers from scratch in Python.
 
 **Chapter 3 — Embeddings: Giving Tokens Meaning**
 
-Token IDs are still just arbitrary integers. Embeddings are the step that turns those integers into vectors with genuine semantic content — where "cat" and "kitten" end up mathematically close, and word arithmetic like `king − man + woman ≈ queen` actually works. This chapter explains how embeddings are stored, learned, and used, with a notebook demonstrating the geometry of meaning.
+Token IDs are still just arbitrary integers. Embeddings are the step that turns those integers into vectors with genuine semantic content — where "cat" and "kitten" end up mathematically close, and word arithmetic like `king − man + woman ≈ queen` actually works. Diagrams and notebook included.
+
+**Chapter 4 — Tensors: The Data Structure Behind Everything**
+
+Every number in a neural network lives in a tensor. This chapter explains what tensors are, how to read their shapes, and how the data you've seen so far (token IDs, embedding vectors, batches of sentences) maps to specific tensor shapes. Once you can read tensor shapes, you can read any ML code.
+
+**Chapter 5 — Vector Databases: Putting Embeddings to Work**
+
+You have embeddings — now what do you do with a million of them? This chapter covers semantic search, how vector databases index and retrieve vectors at scale using ANN algorithms, and how RAG (Retrieval-Augmented Generation) plugs retrieved context into a language model. The applied payoff from Chapters 3 and 4.
+
+**Chapter 6 — The Math Bridge**
+
+Three operations that everything in neural networks is built on: the **dot product** (measures similarity, the fundamental unit of neural computation), **matrix multiplication** (many dot products at once — one matrix multiply = one neural network layer), and **activation functions** (ReLU, GELU, softmax — why they're needed and what they do). Ends exactly where Appendix B picks up.
+
+---
+
+## Where vector databases go deeper
+
+Chapter 5 gives you the conceptual foundation for vector search and RAG. The full treatment — chunking strategies, rerankers, production considerations, and a complete RAG implementation — is in **Appendix F**:
+
+- **Chapter 18 — Embeddings for Search**: semantic search pipeline in depth
+- **Chapter 19 — Vector Databases and RAG**: HNSW, production systems, full RAG implementation
 
 ---
 
 ## A note on structure
 
-Each chapter in this appendix is self-contained. You don't need to read Chapter 2 before Chapter 3 — though the concepts do naturally build on each other. If you're here to understand one specific thing, feel free to jump directly to it.
+Each chapter is self-contained. You don't need to read them in order — if you're here to understand one specific thing, jump directly to it. They're also independent from the main handbook; you can read them any time.
 
-These chapters are also deliberately independent from the main content of the handbook. You can read them any time — before, during, or after the rest. They provide background that makes everything else cleaner to understand, but nothing in the main chapters requires you to have read these first.
+That said, the natural reading order is 1 → 2 → 3 → 4 → 5 → 6, because each chapter uses vocabulary introduced in the previous one. And Chapter 6 is specifically designed as the bridge into Appendix B.
