@@ -105,7 +105,10 @@ export function DocsSidebar({
               <FumadocsIcon className="size-5" />
               <span>AI Systems</span>
             </Link>
-            <button className="inline-flex size-8 items-center justify-center rounded-md text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground">
+            <button
+              aria-label="Toggle sidebar"
+              className="inline-flex size-8 items-center justify-center rounded-md text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground"
+            >
               <SidebarIcon className="size-4" />
             </button>
           </div>

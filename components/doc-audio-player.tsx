@@ -129,6 +129,7 @@ export function DocAudioPlayer({ src }: DocAudioPlayerProps) {
       <div className="relative flex items-center w-24 sm:w-32">
         <input
           type="range"
+          aria-label="Audio progress"
           min={0}
           max={duration || 100}
           step={0.1}
