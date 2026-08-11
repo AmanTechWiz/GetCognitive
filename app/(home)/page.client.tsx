@@ -469,26 +469,23 @@ export function OrangeDitheredBackground() {
   );
 }
 
-const DynamicBooksScene = dynamic(() => import('@/components/books-scene').then((mod) => mod.BooksScene), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-full w-full items-center justify-center bg-fd-card/50">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand border-t-transparent" />
-    </div>
-  ),
-});
+const DynamicBooksScene = dynamic(
+  () => import('@/components/books-scene').then((mod) => mod.BooksScene),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full w-full items-center justify-center bg-fd-card/50">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand border-t-transparent" />
+      </div>
+    ),
+  },
+);
 
 export function BooksSceneClient() {
   return <DynamicBooksScene />;
 }
 
-export function StorySection({
-  searchItems,
-  docs = [],
-}: {
-  searchItems: any[];
-  docs?: any[];
-}) {
+export function StorySection({ searchItems, docs = [] }: { searchItems: any[]; docs?: any[] }) {
   const [isOverviewHovered, setIsOverviewHovered] = useState(false);
   const [isDiagramHovered, setIsDiagramHovered] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -534,13 +531,11 @@ export function StorySection({
       <div
         className={cn(
           'w-full max-w-[520px] rounded-2xl border bg-fd-card/80 p-3 shadow-xl shadow-black/40 backdrop-blur-md flex flex-col items-center text-center transition-all duration-500 ease-out relative',
-          isAnyHovered ? 'lg:-translate-x-44 -translate-x-8 shadow-2xl' : 'translate-x-0'
+          isAnyHovered ? 'lg:-translate-x-44 -translate-x-8 shadow-2xl' : 'translate-x-0',
         )}
       >
         <div className="space-y-4 px-4 py-3 flex flex-col items-center">
-          <h2 className="text-3xl lg:text-4xl font-medium tracking-tight">
-            Learn AI Visually.
-          </h2>
+          <h2 className="text-3xl lg:text-4xl font-medium tracking-tight">Learn AI Visually.</h2>
 
           <p className="max-w-md text-sm leading-6 text-fd-muted-foreground text-center">
             Explore modern AI concepts with diagrams with real, human explanations.
@@ -564,7 +559,7 @@ export function StorySection({
             'before:absolute before:-left-8 before:top-0 before:bottom-0 before:w-8 before:content-[""]',
             isOverviewHovered
               ? 'opacity-100 translate-x-0 scale-100 pointer-events-auto'
-              : 'opacity-0 translate-x-8 scale-95 pointer-events-none'
+              : 'opacity-0 translate-x-8 scale-95 pointer-events-none',
           )}
         >
           <DocsSidebarPreview docs={docs} />
@@ -579,12 +574,24 @@ export function StorySection({
             'before:absolute before:-left-8 before:top-0 before:bottom-0 before:w-8 before:content-[""]',
             isDiagramHovered
               ? 'opacity-100 translate-x-0 scale-100 pointer-events-auto'
-              : 'opacity-0 translate-x-8 scale-95 pointer-events-none'
+              : 'opacity-0 translate-x-8 scale-95 pointer-events-none',
           )}
         >
           <div className="overflow-hidden rounded-2xl border border-fd-border/80 bg-fd-card/95 p-2 shadow-2xl backdrop-blur-xl">
-            <Image src="/learn-context.png" alt="Architecture Diagram" width={600} height={450} className="rounded-xl block dark:hidden w-full h-auto" />
-            <Image src="/learn-context-dark.png" alt="Architecture Diagram" width={600} height={450} className="rounded-xl hidden dark:block w-full h-auto" />
+            <Image
+              src="/learn-context.png"
+              alt="Architecture Diagram"
+              width={600}
+              height={450}
+              className="rounded-xl block dark:hidden w-full h-auto"
+            />
+            <Image
+              src="/learn-context-dark.png"
+              alt="Architecture Diagram"
+              width={600}
+              height={450}
+              className="rounded-xl hidden dark:block w-full h-auto"
+            />
           </div>
         </div>
       </div>

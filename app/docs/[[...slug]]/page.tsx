@@ -24,14 +24,12 @@ import { DocAudioPlayer } from '@/components/doc-audio-player';
 
 import { redirect } from 'next/navigation';
 
-export default async function DocsPage({
-  params,
-}: {
-  params: Promise<{ slug?: string[] }>;
-}) {
+export default async function DocsPage({ params }: { params: Promise<{ slug?: string[] }> }) {
   const { slug = [] } = await params;
   if (slug.length === 0) {
-    redirect('/docs/part-i-foundations/chapter-1-from-prompt-to-production/11-the-lifecycle-of-an-ai-request');
+    redirect(
+      '/docs/part-i-foundations/chapter-1-from-prompt-to-production/11-the-lifecycle-of-an-ai-request',
+    );
   }
   const page = getDocBySlug(slug);
 
@@ -251,9 +249,21 @@ async function getHighlighter() {
     _highlighter = await createHighlighter({
       themes: ['github-light', 'github-dark'],
       langs: [
-        'python', 'typescript', 'javascript', 'tsx', 'jsx',
-        'json', 'bash', 'shell', 'text', 'plaintext',
-        'html', 'css', 'markdown', 'yaml', 'toml',
+        'python',
+        'typescript',
+        'javascript',
+        'tsx',
+        'jsx',
+        'json',
+        'bash',
+        'shell',
+        'text',
+        'plaintext',
+        'html',
+        'css',
+        'markdown',
+        'yaml',
+        'toml',
       ],
     });
   }

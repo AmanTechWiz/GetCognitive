@@ -38,7 +38,10 @@ test.describe('Home page', () => {
 test.describe('Navigation', () => {
   test('navigates to docs page from home', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('link', { name: /start learning/i }).first().click();
+    await page
+      .getByRole('link', { name: /start learning/i })
+      .first()
+      .click();
     await expect(page).toHaveURL(/\/docs/);
   });
 });

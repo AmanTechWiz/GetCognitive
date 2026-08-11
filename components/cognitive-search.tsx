@@ -37,7 +37,9 @@ export function CognitiveSearchPanel({
     return initialSearch || '';
   });
 
-  const initialSearchKey = Array.isArray(initialSearch) ? initialSearch.join(',') : (initialSearch || '');
+  const initialSearchKey = Array.isArray(initialSearch)
+    ? initialSearch.join(',')
+    : initialSearch || '';
 
   useEffect(() => {
     if (!autoType) return;
@@ -45,9 +47,11 @@ export function CognitiveSearchPanel({
     let timeout: ReturnType<typeof setTimeout>;
     let interval: ReturnType<typeof setInterval>;
     let isMounted = true;
-    
+
     const queries = Array.isArray(initialSearch)
-      ? (initialSearch.length > 0 ? initialSearch : [''])
+      ? initialSearch.length > 0
+        ? initialSearch
+        : ['']
       : [initialSearch || ''];
 
     const root = rootRef.current;
@@ -231,7 +235,10 @@ function getSearchDescription(item: SearchItem, query: string) {
   const normalizedIndex = normalizedBody.indexOf(normalizedQuery);
   if (normalizedIndex === -1) return item.description;
 
-  const plainBody = body.replace(/[#*_`>\-[\]()]/g, ' ').replace(/\s+/g, ' ').trim();
+  const plainBody = body
+    .replace(/[#*_`>\-[\]()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const index = normalizeSearchText(plainBody).indexOf(normalizedQuery);
   const start = Math.max(0, index - 70);
   const end = Math.min(plainBody.length, index + normalizedQuery.length + 120);
@@ -239,7 +246,11 @@ function getSearchDescription(item: SearchItem, query: string) {
 }
 
 function normalizeSearchText(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function slugify(value: string) {
@@ -328,7 +339,11 @@ export function CognitiveSearchTrigger({
             >
               <X className="size-4" />
             </button>
-            <CognitiveSearchPanel initialSearch="" onClose={() => setOpen(false)} searchItems={searchItems} />
+            <CognitiveSearchPanel
+              initialSearch=""
+              onClose={() => setOpen(false)}
+              searchItems={searchItems}
+            />
           </div>
         </div>
       ) : null}

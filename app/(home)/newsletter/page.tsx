@@ -21,7 +21,8 @@ export default function NewsletterPage() {
         <div className="space-y-2">
           <h1 className={cn(headingVariants({ variant: 'h2' }))}>Newsletter</h1>
           <p className="text-fd-muted-foreground text-sm">
-            Coming soon. Join the waitlist to get weekly updates on the latest AI concepts, diagrams, and architecture patterns.
+            Coming soon. Join the waitlist to get weekly updates on the latest AI concepts,
+            diagrams, and architecture patterns.
           </p>
         </div>
       </div>

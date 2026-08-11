@@ -2,15 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useTheme } from 'next-themes';
-import {
-  Play,
-  Square,
-  ChevronDown,
-  ChevronRight,
-  Code2,
-  FileText,
-  Terminal,
-} from 'lucide-react';
+import { Play, Square, ChevronDown, ChevronRight, Code2, FileText, Terminal } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -92,13 +84,16 @@ function Cell({
   const label = execCount !== null ? `[${execCount}]` : isRunning ? '[*]' : '[ ]';
 
   return (
-    <div className={[
-      'nb-cell',
-      `nb-cell--${cell.type}`,
-      isRunning ? 'nb-cell--running' : '',
-      hasRun ? 'nb-cell--done' : '',
-    ].filter(Boolean).join(' ')}>
-
+    <div
+      className={[
+        'nb-cell',
+        `nb-cell--${cell.type}`,
+        isRunning ? 'nb-cell--running' : '',
+        hasRun ? 'nb-cell--done' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       {/* gutter */}
       <div className="nb-gutter">
         {isCode ? (
@@ -109,18 +104,18 @@ function Cell({
             title={isRunning ? 'Running…' : 'Run cell'}
             aria-label="Run cell"
           >
-            {isRunning
-              ? <Square className="nb-run-icon nb-run-icon--stop" />
-              : <Play  className="nb-run-icon" />}
+            {isRunning ? (
+              <Square className="nb-run-icon nb-run-icon--stop" />
+            ) : (
+              <Play className="nb-run-icon" />
+            )}
           </button>
         ) : (
           <span className="nb-gutter-type-icon">
             <FileText className="nb-type-icon" />
           </span>
         )}
-        {isCode && (
-          <span className="nb-exec-count">{label}</span>
-        )}
+        {isCode && <span className="nb-exec-count">{label}</span>}
       </div>
 
       {/* body */}
@@ -129,12 +124,14 @@ function Cell({
           {isCode && (
             <button
               className="nb-collapse-btn"
-              onClick={() => setCollapsed(c => !c)}
+              onClick={() => setCollapsed((c) => !c)}
               aria-label="Toggle collapse"
             >
-              {collapsed
-                ? <ChevronRight className="nb-collapse-icon" />
-                : <ChevronDown  className="nb-collapse-icon" />}
+              {collapsed ? (
+                <ChevronRight className="nb-collapse-icon" />
+              ) : (
+                <ChevronDown className="nb-collapse-icon" />
+              )}
             </button>
           )}
           {collapsed ? (
@@ -159,7 +156,9 @@ function Cell({
 
         {hasRun && !collapsed && cell.outputs && cell.outputs.length > 0 && (
           <div className="nb-outputs">
-            {cell.outputs.map((o, i) => <OutputView key={i} output={o} />)}
+            {cell.outputs.map((o, i) => (
+              <OutputView key={i} output={o} />
+            ))}
           </div>
         )}
       </div>
@@ -174,12 +173,12 @@ function NotebookContainer({ data }: { data: NotebookData }) {
 
   const [runState, setRunState] = useState<Record<string, 'idle' | 'running' | 'done'>>(() =>
     Object.fromEntries(
-      data.cells.map(c => [
+      data.cells.map((c) => [
         c.id,
         // If the cell already has pre-defined outputs, show them immediately
         (c.outputs && c.outputs.length > 0 ? 'done' : 'idle') as 'idle' | 'running' | 'done',
-      ])
-    )
+      ]),
+    ),
   );
   const [execCounts, setExecCounts] = useState<Record<string, number | null>>(() =>
     Object.fromEntries(
@@ -187,31 +186,41 @@ function NotebookContainer({ data }: { data: NotebookData }) {
         c.id,
         // Pre-run cells get sequential exec counts starting at 1
         c.outputs && c.outputs.length > 0 ? i + 1 : null,
-      ])
-    )
+      ]),
+    ),
   );
-  const globalCount = useRef(data.cells.filter((c: any) => c.outputs && c.outputs.length > 0).length);
+  const globalCount = useRef(
+    data.cells.filter((c: any) => c.outputs && c.outputs.length > 0).length,
+  );
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  useEffect(() => () => { timers.current.forEach(clearTimeout); }, []);
+  useEffect(
+    () => () => {
+      timers.current.forEach(clearTimeout);
+    },
+    [],
+  );
 
-  const isAnyRunning = Object.values(runState).some(s => s === 'running');
+  const isAnyRunning = Object.values(runState).some((s) => s === 'running');
 
   function runCell(cellId: string) {
     if (runState[cellId] === 'running') return;
-    setRunState(s => ({ ...s, [cellId]: 'running' }));
-    const t = setTimeout(() => {
-      globalCount.current += 1;
-      const n = globalCount.current;
-      setRunState(s => ({ ...s, [cellId]: 'done' }));
-      setExecCounts(s => ({ ...s, [cellId]: n }));
-    }, 300 + Math.random() * 600);
+    setRunState((s) => ({ ...s, [cellId]: 'running' }));
+    const t = setTimeout(
+      () => {
+        globalCount.current += 1;
+        const n = globalCount.current;
+        setRunState((s) => ({ ...s, [cellId]: 'done' }));
+        setExecCounts((s) => ({ ...s, [cellId]: n }));
+      },
+      300 + Math.random() * 600,
+    );
     timers.current.push(t);
   }
 
   function runAll() {
     data.cells
-      .filter(c => c.type === 'code')
+      .filter((c) => c.type === 'code')
       .forEach((c, i) => {
         const t = setTimeout(() => runCell(c.id), i * 700);
         timers.current.push(t);
@@ -221,8 +230,8 @@ function NotebookContainer({ data }: { data: NotebookData }) {
   function reset() {
     timers.current.forEach(clearTimeout);
     timers.current = [];
-    setRunState(Object.fromEntries(data.cells.map(c => [c.id, 'idle' as const])));
-    setExecCounts(Object.fromEntries(data.cells.map(c => [c.id, null])));
+    setRunState(Object.fromEntries(data.cells.map((c) => [c.id, 'idle' as const])));
+    setExecCounts(Object.fromEntries(data.cells.map((c) => [c.id, null])));
     globalCount.current = 0;
   }
 
@@ -231,7 +240,7 @@ function NotebookContainer({ data }: { data: NotebookData }) {
       {/* toolbar */}
       <div className="nb-toolbar">
         <div className="nb-toolbar-left">
-          {data.title   && <span className="nb-title">{data.title}</span>}
+          {data.title && <span className="nb-title">{data.title}</span>}
           {data.runtime && <span className="nb-runtime-badge">{data.runtime}</span>}
         </div>
         <div className="nb-toolbar-right">
@@ -252,7 +261,7 @@ function NotebookContainer({ data }: { data: NotebookData }) {
 
       {/* cells */}
       <div className="nb-cells">
-        {data.cells.map(cell => (
+        {data.cells.map((cell) => (
           <Cell
             key={cell.id}
             cell={cell}

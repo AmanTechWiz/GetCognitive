@@ -9,3 +9,5 @@ coverage/**
 playwright-report/**
 test-results/**
 public/**
+next-env.d.ts
+tsconfig.tsbuildinfo

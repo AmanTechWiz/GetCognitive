@@ -37,8 +37,12 @@ html.dark .nb-shiki-source .shiki span {
 }
 
 /* Match cell background to Shiki theme so it feels native */
-html:not(.dark) .nb-root .nb-source--code { background: #ffffff; }
-html.dark       .nb-root .nb-source--code { background: #0d1117; }
+html:not(.dark) .nb-root .nb-source--code {
+  background: #ffffff;
+}
+html.dark .nb-root .nb-source--code {
+  background: #0d1117;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Notebook (Colab-style) component styles
@@ -48,39 +52,39 @@ html.dark       .nb-root .nb-source--code { background: #0d1117; }
 
 /* Scoped CSS variables */
 .nb-root {
-  --nb-bg:           var(--color-fd-background);
-  --nb-surface:      var(--color-fd-card);
-  --nb-surface-2:    var(--color-fd-secondary);
-  --nb-border:       var(--color-fd-border);
-  --nb-text:         var(--color-fd-foreground);
-  --nb-muted:        var(--color-fd-muted-foreground);
-  --nb-accent:       var(--color-fd-accent);
-  --nb-run:          #4caf50;
-  --nb-run-hover:    #43a047;
-  --nb-run-active:   #e53935;
-  --nb-exec-color:   #1976d2;
-  --nb-error-bg:     rgba(229, 57, 53, 0.08);
-  --nb-error-text:   #e53935;
-  --nb-output-bg:    var(--color-fd-muted);
-  --nb-code-bg:      var(--color-fd-secondary);
-  --nb-radius:       0.75rem;
-  --nb-cell-radius:  0.5rem;
-  --nb-font-mono:    ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
-  --nb-font-size:    0.82rem;
+  --nb-bg: var(--color-fd-background);
+  --nb-surface: var(--color-fd-card);
+  --nb-surface-2: var(--color-fd-secondary);
+  --nb-border: var(--color-fd-border);
+  --nb-text: var(--color-fd-foreground);
+  --nb-muted: var(--color-fd-muted-foreground);
+  --nb-accent: var(--color-fd-accent);
+  --nb-run: #4caf50;
+  --nb-run-hover: #43a047;
+  --nb-run-active: #e53935;
+  --nb-exec-color: #1976d2;
+  --nb-error-bg: rgba(229, 57, 53, 0.08);
+  --nb-error-text: #e53935;
+  --nb-output-bg: var(--color-fd-muted);
+  --nb-code-bg: var(--color-fd-secondary);
+  --nb-radius: 0.75rem;
+  --nb-cell-radius: 0.5rem;
+  --nb-font-mono: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  --nb-font-size: 0.82rem;
   --nb-running-color: #ff9800;
-  --nb-toolbar-bg:   var(--color-fd-card);
+  --nb-toolbar-bg: var(--color-fd-card);
 }
 
 /* Dark overrides — more Colab-like darkness */
 .nb-root.nb-dark {
-  --nb-surface:      hsl(0 0% 11%);
-  --nb-surface-2:    hsl(0 0% 13.5%);
-  --nb-code-bg:      hsl(0 0% 10%);
-  --nb-output-bg:    hsl(0 0% 9%);
-  --nb-toolbar-bg:   hsl(0 0% 11%);
-  --nb-exec-color:   #64b5f6;
-  --nb-run:          #66bb6a;
-  --nb-run-hover:    #81c784;
+  --nb-surface: hsl(0 0% 11%);
+  --nb-surface-2: hsl(0 0% 13.5%);
+  --nb-code-bg: hsl(0 0% 10%);
+  --nb-output-bg: hsl(0 0% 9%);
+  --nb-toolbar-bg: hsl(0 0% 11%);
+  --nb-exec-color: #64b5f6;
+  --nb-run: #66bb6a;
+  --nb-run-hover: #81c784;
   --nb-running-color: #ffa726;
 }
 
@@ -93,7 +97,7 @@ html.dark       .nb-root .nb-source--code { background: #0d1117; }
   font-family: var(--nb-font-mono);
   font-size: var(--nb-font-size);
   margin: 1.75rem 0;
-  box-shadow: 0 2px 16px -4px rgba(0,0,0,0.12);
+  box-shadow: 0 2px 16px -4px rgba(0, 0, 0, 0.12);
 }
 
 /* ── Toolbar ── */
@@ -156,7 +160,10 @@ html.dark       .nb-root .nb-source--code { background: #0d1117; }
   font-size: 0.76rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    opacity 0.15s;
   white-space: nowrap;
 }
 
@@ -205,10 +212,10 @@ html.dark       .nb-root .nb-source--code { background: #0d1117; }
 }
 
 .nb-cell:hover {
-  background: rgba(0,0,0,0.015);
+  background: rgba(0, 0, 0, 0.015);
 }
 .nb-dark .nb-cell:hover {
-  background: rgba(255,255,255,0.02);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 /* Running cell highlight */
@@ -228,8 +235,12 @@ html.dark       .nb-root .nb-source--code { background: #0d1117; }
 }
 
 @keyframes nb-pulse {
-  from { opacity: 0.4; }
-  to   { opacity: 1;   }
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* ── Gutter ── */
@@ -257,7 +268,9 @@ html.dark       .nb-root .nb-source--code { background: #0d1117; }
   background: transparent;
   color: var(--nb-muted);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
   flex-shrink: 0;
 }
 
@@ -272,8 +285,12 @@ html.dark       .nb-root .nb-source--code { background: #0d1117; }
 }
 
 @keyframes nb-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .nb-run-icon {

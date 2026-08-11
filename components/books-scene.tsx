@@ -24,7 +24,7 @@ export interface BookCfg {
   back?: (x: CanvasRenderingContext2D, w: number, h: number) => void;
   spine?: (x: CanvasRenderingContext2D, w: number, h: number) => void;
 
-  // Image-based covers (png/webp/jpg/...). Takes priority over painters when present. Hosts without CORS headers fall back to the procedural/generated cover. 
+  // Image-based covers (png/webp/jpg/...). Takes priority over painters when present. Hosts without CORS headers fall back to the procedural/generated cover.
   images?: {
     front?: string;
     back?: string;
@@ -64,14 +64,30 @@ export interface BooksSceneProps {
 
 function ChevronLeft() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M15 18l-6-6 6-6" />
     </svg>
   );
 }
 function ChevronRight() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M9 18l6-6-6-6" />
     </svg>
   );
@@ -82,43 +98,43 @@ const OPEN_BTN_ON = ['opacity-100', 'scale-100'];
 
 const DEMO_BOOKS: BookCfg[] = [
   {
-    id: "book1",
-    title: "Machine Learning",
-    author: "Cognitive",
-    year: "2024",
+    id: 'book1',
+    title: 'Machine Learning',
+    author: 'Cognitive',
+    year: '2024',
     stars: 5,
-    desc: "A comprehensive guide to understanding machine learning algorithms and their applications in modern software engineering.",
-    spineBg: "#1e1e1e",
-    spineInk: "#ffffff",
-    spineFont: "700 42px Georgia",
-    backBg: "#1e1e1e",
-    backInk: "255,255,255",
-    edge: "#e0d6c8",
+    desc: 'A comprehensive guide to understanding machine learning algorithms and their applications in modern software engineering.',
+    spineBg: '#1e1e1e',
+    spineInk: '#ffffff',
+    spineFont: '700 42px Georgia',
+    backBg: '#1e1e1e',
+    backInk: '255,255,255',
+    edge: '#e0d6c8',
     images: {
       front: frontCoverMl.src,
       spine: spineCoverMl.src,
-      back: backCoverMl.src
-    }
+      back: backCoverMl.src,
+    },
   },
   {
-    id: "book2",
-    title: "Neural Networks",
-    author: "Cognitive",
-    year: "2024",
+    id: 'book2',
+    title: 'Neural Networks',
+    author: 'Cognitive',
+    year: '2024',
     stars: 5,
-    desc: "Focused material for learning neural networks.",
-    spineBg: "#f0f0f0",
-    spineInk: "#000000",
-    spineFont: "700 42px sans-serif",
-    backBg: "#f0f0f0",
-    backInk: "0,0,0",
-    edge: "#ffffff",
+    desc: 'Focused material for learning neural networks.',
+    spineBg: '#f0f0f0',
+    spineInk: '#000000',
+    spineFont: '700 42px sans-serif',
+    backBg: '#f0f0f0',
+    backInk: '0,0,0',
+    edge: '#ffffff',
     images: {
       front: frontCoverNets.src,
       spine: spineCoverNets.src,
-      back: backCoverNets.src
-    }
-  }
+      back: backCoverNets.src,
+    },
+  },
 ];
 
 export function BooksScene({
@@ -136,7 +152,7 @@ export function BooksScene({
   const openBtnRef = useRef<HTMLButtonElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const dpRef = useRef<HTMLDivElement | null>(null);
-  const shiftCarouselRef = useRef<(dir: 1 | -1) => void>(() => { });
+  const shiftCarouselRef = useRef<(dir: 1 | -1) => void>(() => {});
 
   const onBookSelectRef = useRef(onBookSelect);
   useEffect(() => {
@@ -207,7 +223,13 @@ export function BooksScene({
       return c;
     }
 
-    function drawSpaced(x: CanvasRenderingContext2D, text: string, cx: number, y: number, ls: number) {
+    function drawSpaced(
+      x: CanvasRenderingContext2D,
+      text: string,
+      cx: number,
+      y: number,
+      ls: number,
+    ) {
       const prev = x.textAlign;
       x.textAlign = 'left';
       const chars = [...text];
@@ -226,7 +248,14 @@ export function BooksScene({
       x.textAlign = prev;
     }
 
-    function rr(x: CanvasRenderingContext2D, px: number, py: number, w: number, h: number, r: number) {
+    function rr(
+      x: CanvasRenderingContext2D,
+      px: number,
+      py: number,
+      w: number,
+      h: number,
+      r: number,
+    ) {
       x.beginPath();
       x.moveTo(px + r, py);
       x.arcTo(px + w, py, px + w, py + h, r);
@@ -245,7 +274,8 @@ export function BooksScene({
       const fail = document.createElement('div');
       fail.className =
         'absolute inset-0 z-50 flex items-center justify-center p-10 text-center text-lg leading-relaxed text-[var(--bs-lav)]';
-      fail.textContent = 'This experience needs WebGL, which your browser blocked or does not support.';
+      fail.textContent =
+        'This experience needs WebGL, which your browser blocked or does not support.';
       root.appendChild(fail);
       return () => {
         fail.remove();
@@ -268,7 +298,14 @@ export function BooksScene({
     const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 100);
     camera.position.set(0, 0.1, 9.6);
 
-    function envBlob(x: CanvasRenderingContext2D, cx: number, cy: number, r: number, rgb: string, a: number) {
+    function envBlob(
+      x: CanvasRenderingContext2D,
+      cx: number,
+      cy: number,
+      r: number,
+      rgb: string,
+      a: number,
+    ) {
       const g = x.createRadialGradient(cx, cy, 0, cx, cy, r);
       g.addColorStop(0, 'rgba(' + rgb + ',' + a + ')');
       g.addColorStop(1, 'rgba(' + rgb + ',0)');
@@ -330,8 +367,12 @@ export function BooksScene({
       return t;
     }
 
-    // Paint a fallback cover immediately, then swap in `imageURL` once it loads (if given). Keeps the fallback forever if there's no URL, or if the load fails / is CORS-blocked. 
-    function loadOrPaint(material: THREE.MeshStandardMaterial, imageURL: string | null | undefined, paintFallback: () => HTMLCanvasElement) {
+    // Paint a fallback cover immediately, then swap in `imageURL` once it loads (if given). Keeps the fallback forever if there's no URL, or if the load fails / is CORS-blocked.
+    function loadOrPaint(
+      material: THREE.MeshStandardMaterial,
+      imageURL: string | null | undefined,
+      paintFallback: () => HTMLCanvasElement,
+    ) {
       material.map = tex(paintFallback());
       material.needsUpdate = true;
       if (!imageURL) return;
@@ -400,7 +441,11 @@ export function BooksScene({
         const w = 1 + Math.random() * 2.4,
           tone = Math.random();
         x.fillStyle =
-          tone < 0.12 ? 'rgba(140,125,95,.5)' : tone < 0.5 ? 'rgba(255,255,252,.55)' : 'rgba(190,178,150,.45)';
+          tone < 0.12
+            ? 'rgba(140,125,95,.5)'
+            : tone < 0.5
+              ? 'rgba(255,255,252,.55)'
+              : 'rgba(190,178,150,.45)';
         if (vertical) x.fillRect(p, 0, w, s);
         else x.fillRect(0, p, s, w);
         p += w + 0.6 + Math.random() * 1.6;
@@ -447,7 +492,12 @@ export function BooksScene({
     })();
 
     // Cover fallbacks (used whenever no image / no custom painter given)
-    function paintDefaultFront(x: CanvasRenderingContext2D, w: number, h: number, o: { title: string; author: string; bg: string }) {
+    function paintDefaultFront(
+      x: CanvasRenderingContext2D,
+      w: number,
+      h: number,
+      o: { title: string; author: string; bg: string },
+    ) {
       x.fillStyle = o.bg;
       x.fillRect(0, 0, w, h);
       x.fillStyle = 'rgba(255,255,255,0.06)';
@@ -477,7 +527,12 @@ export function BooksScene({
       x.strokeRect(60, 60, w - 120, h - 120);
     }
 
-    function paintBack(x: CanvasRenderingContext2D, w: number, h: number, o: { backBg: string; backInk: string }) {
+    function paintBack(
+      x: CanvasRenderingContext2D,
+      w: number,
+      h: number,
+      o: { backBg: string; backInk: string },
+    ) {
       x.fillStyle = o.backBg;
       x.fillRect(0, 0, w, h);
       const ink = o.backInk;
@@ -560,9 +615,17 @@ export function BooksScene({
       x.fillRect(220, 225, w - 440, 3);
       x.globalAlpha = 1;
 
-      const list = chapters && chapters.length
-        ? chapters
-        : ['Introduction', 'Main Ideas', 'Practical Lessons', 'Case Studies', 'Takeaways', 'Final Notes'];
+      const list =
+        chapters && chapters.length
+          ? chapters
+          : [
+              'Introduction',
+              'Main Ideas',
+              'Practical Lessons',
+              'Case Studies',
+              'Takeaways',
+              'Final Notes',
+            ];
       x.textAlign = 'left';
       x.font = '500 46px Georgia';
       let y = 318;
@@ -614,8 +677,20 @@ export function BooksScene({
     }
 
     const paperFlat = std({ color: 0xf2ecdd, roughness: 0.95, envMapIntensity: 0.2 });
-    const striMatV = std({ map: striV, bumpMap: striV, bumpScale: 0.0025, roughness: 0.95, envMapIntensity: 0.2 });
-    const striMatH = std({ map: striH, bumpMap: striH, bumpScale: 0.0025, roughness: 0.95, envMapIntensity: 0.2 });
+    const striMatV = std({
+      map: striV,
+      bumpMap: striV,
+      bumpScale: 0.0025,
+      roughness: 0.95,
+      envMapIntensity: 0.2,
+    });
+    const striMatH = std({
+      map: striH,
+      bumpMap: striH,
+      bumpScale: 0.0025,
+      roughness: 0.95,
+      envMapIntensity: 0.2,
+    });
     const endpaperMat = std({ map: endpaperTex, roughness: 0.9, envMapIntensity: 0.25 });
     const pageMats = [0xf4eee0, 0xf1ebdb, 0xf6f0e3].map((c) =>
       std({ color: c, roughness: 0.92, envMapIntensity: 0.22, side: THREE.DoubleSide }),
@@ -658,26 +733,61 @@ export function BooksScene({
       root.add(float);
       bookRoot.add(root);
 
-      const indexPageMat = std({ map: makeIndexPageTex(cfg.chapters), roughness: 0.92, envMapIntensity: 0.2, side: THREE.DoubleSide });
+      const indexPageMat = std({
+        map: makeIndexPageTex(cfg.chapters),
+        roughness: 0.92,
+        envMapIntensity: 0.2,
+        side: THREE.DoubleSide,
+      });
 
       const edgeColor = cfg.edge ?? '#eee4cf';
-      const mEdge = std({ color: edgeColor, bumpMap: laminateBump, bumpScale: 0.0035, roughness: 0.68, envMapIntensity: 0.3 });
-      const mFront = std({ bumpMap: laminateBump, bumpScale: 0.0035, roughness: 0.54, envMapIntensity: 0.28 });
-      const mBack = std({ bumpMap: laminateBump, bumpScale: 0.0035, roughness: 0.58, envMapIntensity: 0.26 });
-      const mSpine = std({ bumpMap: clothBump, bumpScale: 0.006, roughness: 0.78, envMapIntensity: 0.22 });
+      const mEdge = std({
+        color: edgeColor,
+        bumpMap: laminateBump,
+        bumpScale: 0.0035,
+        roughness: 0.68,
+        envMapIntensity: 0.3,
+      });
+      const mFront = std({
+        bumpMap: laminateBump,
+        bumpScale: 0.0035,
+        roughness: 0.54,
+        envMapIntensity: 0.28,
+      });
+      const mBack = std({
+        bumpMap: laminateBump,
+        bumpScale: 0.0035,
+        roughness: 0.58,
+        envMapIntensity: 0.26,
+      });
+      const mSpine = std({
+        bumpMap: clothBump,
+        bumpScale: 0.006,
+        roughness: 0.78,
+        envMapIntensity: 0.22,
+      });
 
       loadOrPaint(mFront, cfg.images?.front ?? cfg.coverURL ?? null, () => {
         const c = mkCanvas(1024, 1536);
         const ctx = c.getContext('2d')!;
         if (cfg.front) cfg.front(ctx, 1024, 1536);
-        else paintDefaultFront(ctx, 1024, 1536, { title: cfg.title, author: cfg.author, bg: cfg.spineBg ?? cfg.backBg ?? '#22252b' });
+        else
+          paintDefaultFront(ctx, 1024, 1536, {
+            title: cfg.title,
+            author: cfg.author,
+            bg: cfg.spineBg ?? cfg.backBg ?? '#22252b',
+          });
         return c;
       });
       loadOrPaint(mBack, cfg.images?.back ?? null, () => {
         const c = mkCanvas(1024, 1536);
         const ctx = c.getContext('2d')!;
         if (cfg.back) cfg.back(ctx, 1024, 1536);
-        else paintBack(ctx, 1024, 1536, { backBg: cfg.backBg ?? '#22252b', backInk: cfg.backInk ?? '255,255,255' });
+        else
+          paintBack(ctx, 1024, 1536, {
+            backBg: cfg.backBg ?? '#22252b',
+            backInk: cfg.backInk ?? '255,255,255',
+          });
         return c;
       });
       loadOrPaint(mSpine, cfg.images?.spine ?? null, () => {
@@ -716,7 +826,14 @@ export function BooksScene({
       spine.castShadow = true;
       float.add(spine);
 
-      const block = new THREE.Mesh(blockGeo, [striMatV, paperFlat, striMatH, striMatH, paperFlat, paperFlat]);
+      const block = new THREE.Mesh(blockGeo, [
+        striMatV,
+        paperFlat,
+        striMatH,
+        striMatH,
+        paperFlat,
+        paperFlat,
+      ]);
       block.position.set(-0.0075, 0, BLOCK_Z);
       block.castShadow = block.receiveShadow = true;
       float.add(block);
@@ -751,7 +868,12 @@ export function BooksScene({
 
       const blob = new THREE.Mesh(
         blobGeo,
-        new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, opacity: 0.45, depthWrite: false }),
+        new THREE.MeshBasicMaterial({
+          map: blobTex,
+          transparent: true,
+          opacity: 0.45,
+          depthWrite: false,
+        }),
       );
       blob.scale.set(3.1, 3.9, 1);
       blob.position.set(0.1, -0.3, -0.85);
@@ -817,7 +939,11 @@ export function BooksScene({
       activate(book: Book) {
         this.anchor = book;
         this.items.forEach((l) => {
-          l.kick.set(-l.hx + (Math.random() - 0.5) * 0.6, -l.hy + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.5);
+          l.kick.set(
+            -l.hx + (Math.random() - 0.5) * 0.6,
+            -l.hy + (Math.random() - 0.5) * 0.6,
+            (Math.random() - 0.5) * 0.5,
+          );
           l.s.t = l.size;
           l.mesh.visible = true;
         });
@@ -862,7 +988,12 @@ export function BooksScene({
       const geo = new THREE.ShapeGeometry(shape, 10);
       const cols = [0x3e7c3f, 0x57944a, 0x2f6136, 0x6aa557];
       for (let i = 0; i < 16; i++) {
-        const mat = std({ color: cols[i % 4], roughness: 0.55, envMapIntensity: 0.3, side: THREE.DoubleSide });
+        const mat = std({
+          color: cols[i % 4],
+          roughness: 0.55,
+          envMapIntensity: 0.3,
+          side: THREE.DoubleSide,
+        });
         const mesh = new THREE.Mesh(geo, mat);
         mesh.visible = false;
         bookRoot.add(mesh);
@@ -875,7 +1006,11 @@ export function BooksScene({
           hz: -0.5 + Math.random() * 1.5,
           sp: 0.25 + Math.random() * 0.5,
           ph: Math.random() * 6.28,
-          rv: new THREE.Vector3((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.8),
+          rv: new THREE.Vector3(
+            (Math.random() - 0.5) * 0.8,
+            (Math.random() - 0.5) * 0.8,
+            (Math.random() - 0.5) * 0.8,
+          ),
           kick: new THREE.Vector3(),
           size: 0.14 + Math.random() * 0.16,
           s: new Spring(0, 60, 10),
@@ -893,7 +1028,11 @@ export function BooksScene({
     } = { mode: 'hero', selected: null, hovered: null, pillLock: null, kbIndex: -1 };
 
     type Slot = { p: [number, number, number]; r: [number, number, number]; s: number };
-    const SLOTS: { hero: Slot[]; detail: Slot | null; portrait: boolean } = { hero: [], detail: null, portrait: false };
+    const SLOTS: { hero: Slot[]; detail: Slot | null; portrait: boolean } = {
+      hero: [],
+      detail: null,
+      portrait: false,
+    };
 
     function computeSlots() {
       const a = dims.w / Math.max(1, dims.h);
@@ -904,15 +1043,15 @@ export function BooksScene({
 
       SLOTS.hero = SLOTS.portrait
         ? [
-          { p: [-1.36, -1.0, -0.12], r: [-0.045, 0.4, 0.185], s: 1.39 },
-          { p: [0.2, -0.45, 0.6], r: [-0.05, -0.1, -0.035], s: 1.52 },
-          { p: [1.62, -1.1, -0.34], r: [-0.045, -0.42, -0.17], s: 1.39 },
-        ]
+            { p: [-1.36, -1.0, -0.12], r: [-0.045, 0.4, 0.185], s: 1.39 },
+            { p: [0.2, -0.45, 0.6], r: [-0.05, -0.1, -0.035], s: 1.52 },
+            { p: [1.62, -1.1, -0.34], r: [-0.045, -0.42, -0.17], s: 1.39 },
+          ]
         : [
-          { p: [-2.06, -1.23, -0.12], r: [-0.045, 0.4, 0.185], s: 1.39 },
-          { p: [0.3, -1.08, 0.6], r: [-0.05, -0.1, -0.035], s: 1.52 },
-          { p: [2.45, -1.41, -0.34], r: [-0.045, -0.42, -0.17], s: 1.39 },
-        ];
+            { p: [-2.06, -1.23, -0.12], r: [-0.045, 0.4, 0.185], s: 1.39 },
+            { p: [0.3, -1.08, 0.6], r: [-0.05, -0.1, -0.035], s: 1.52 },
+            { p: [2.45, -1.41, -0.34], r: [-0.045, -0.42, -0.17], s: 1.39 },
+          ];
 
       if (SLOTS.portrait) {
         const el = dpRef.current;
@@ -991,7 +1130,15 @@ export function BooksScene({
       playY(b, [
         { d: delay, from: here, to: here, ease: EASE.hold },
         { d: 0.28, from: here, to: apex, ease: EASE.outQuad },
-        { d: 0.9, from: apex, to: y0 - CLEAR, ease: EASE.inOutSine, end: () => { b.root.visible = false; } },
+        {
+          d: 0.9,
+          from: apex,
+          to: y0 - CLEAR,
+          ease: EASE.inOutSine,
+          end: () => {
+            b.root.visible = false;
+          },
+        },
       ]);
     }
     function bringBack(b: Book, i: number, delay: number) {
@@ -1004,7 +1151,7 @@ export function BooksScene({
       ]);
     }
 
-    // carousel: which VISIBLE-sized window of `bookInstances` sits in the 3 hero slots 
+    // carousel: which VISIBLE-sized window of `bookInstances` sits in the 3 hero slots
     function windowIndices(start: number, total: number, count: number) {
       const arr: number[] = [];
       for (let i = 0; i < count; i++) arr.push((start + i) % total);
@@ -1047,7 +1194,13 @@ export function BooksScene({
         const b = bookInstances[bi];
         if (slot) b.springs.px.t = slot.p[0] - dir * 6.5;
       });
-      setT(() => toHide.forEach((bi) => { bookInstances[bi].root.visible = false; }), 650);
+      setT(
+        () =>
+          toHide.forEach((bi) => {
+            bookInstances[bi].root.visible = false;
+          }),
+        650,
+      );
 
       incoming.forEach((bi, i) => {
         const slot = SLOTS.hero[i];
@@ -1070,7 +1223,9 @@ export function BooksScene({
 
       currentWindow = incoming;
       rebuildHitMeshes();
-      setT(() => { carouselBusy = false; }, 700);
+      setT(() => {
+        carouselBusy = false;
+      }, 700);
     }
     shiftCarouselRef.current = shiftCarousel;
 
@@ -1334,7 +1489,8 @@ export function BooksScene({
           shiftCarousel(e.key === 'ArrowRight' ? 1 : -1);
         } else {
           const d = e.key === 'ArrowRight' ? 1 : -1;
-          state.kbIndex = ((state.kbIndex < 0 ? (d > 0 ? -1 : 1) : state.kbIndex) + d + VISIBLE) % VISIBLE;
+          state.kbIndex =
+            ((state.kbIndex < 0 ? (d > 0 ? -1 : 1) : state.kbIndex) + d + VISIBLE) % VISIBLE;
           state.pillLock = null;
         }
         e.preventDefault();
@@ -1416,7 +1572,8 @@ export function BooksScene({
       b.orbXs.update(dt);
 
       let coverBase = 0;
-      if (inDetail) coverBase = DETAIL_OPEN_ANGLE + Math.sin(t * 0.8 + b.phase) * DETAIL_OPEN_SWAY * idle;
+      if (inDetail)
+        coverBase = DETAIL_OPEN_ANGLE + Math.sin(t * 0.8 + b.phase) * DETAIL_OPEN_SWAY * idle;
       const fan = orbitActive ? clamp(b.orbYv * 0.16, 0, 0.75) : 0;
       const fanB = orbitActive ? clamp(-b.orbYv * 0.16, 0, 0.75) : 0;
       let coverBBase = 0;
@@ -1460,7 +1617,11 @@ export function BooksScene({
       b.root.position.set(s.px.v, s.py.v, s.pz.v + s.lift.v);
       const sway = inDetail ? Math.sin(t * 0.45 + b.phase) * 0.035 * idle * (1 - activity) : 0;
       const swing = clamp(-s.px.vel * 0.12, -0.5, 0.5);
-      b.root.rotation.set(s.rx.v + s.tiltX.v + b.orbXs.v, s.ry.v + s.tiltY.v + b.orbY + sway + swing, s.rz.v);
+      b.root.rotation.set(
+        s.rx.v + s.tiltX.v + b.orbXs.v,
+        s.ry.v + s.tiltY.v + b.orbY + sway + swing,
+        s.rz.v,
+      );
       b.root.scale.setScalar(Math.max(s.sc.v, 0.001));
 
       const ang = Math.max(0, s.cover.v + s.drag.v);
@@ -1515,7 +1676,13 @@ export function BooksScene({
       camera.position.set(camX.update(dt), camY.update(dt), camZ.update(dt));
       camera.lookAt(lookX.update(dt), lookY.update(dt), 0);
 
-      if (state.mode === 'hero' && state.hovered && ptr.seen && !isTouch() && !(ptr.down && ptr.moved > 14)) {
+      if (
+        state.mode === 'hero' &&
+        state.hovered &&
+        ptr.seen &&
+        !isTouch() &&
+        !(ptr.down && ptr.moved > 14)
+      ) {
         const tx = ptr.cx,
           ty = ptr.cy + 34;
         if (!pillOn) {
@@ -1630,19 +1797,19 @@ export function BooksScene({
 
   const themeVars: React.CSSProperties = themeColors
     ? ({
-      '--bs-navy': themeColors.navy ?? '#141a32',
-      '--bs-pink': themeColors.pink ?? '#f591ac',
-      '--bs-cream': themeColors.cream ?? '#fdfbf4',
-      '--bs-lav': themeColors.lav ?? '#c9d0ee',
-      '--bs-peri': themeColors.peri ?? '#96a2de',
-    } as React.CSSProperties)
+        '--bs-navy': themeColors.navy ?? '#141a32',
+        '--bs-pink': themeColors.pink ?? '#f591ac',
+        '--bs-cream': themeColors.cream ?? '#fdfbf4',
+        '--bs-lav': themeColors.lav ?? '#c9d0ee',
+        '--bs-peri': themeColors.peri ?? '#96a2de',
+      } as React.CSSProperties)
     : ({
-      '--bs-navy': '#141a32',
-      '--bs-pink': '#f591ac',
-      '--bs-cream': '#fdfbf4',
-      '--bs-lav': '#c9d0ee',
-      '--bs-peri': '#96a2de',
-    } as React.CSSProperties);
+        '--bs-navy': '#141a32',
+        '--bs-pink': '#f591ac',
+        '--bs-cream': '#fdfbf4',
+        '--bs-lav': '#c9d0ee',
+        '--bs-peri': '#96a2de',
+      } as React.CSSProperties);
   if (themeColors?.bg) (themeVars as any).background = themeColors.bg;
 
   const panelVisible = uiMode === 'detail';
@@ -1670,8 +1837,13 @@ export function BooksScene({
     >
       {/* hero word */}
       <div
-        className={`pointer-events-none absolute left-1/2 top-[18%] z-[1] -translate-x-1/2 select-none transition-all duration-500 ease-out ${heroWordVisible ? 'translate-y-0 opacity-100' : uiMode === 'hero' ? '-translate-y-0 translate-y-[60px] opacity-0' : '-translate-y-11 opacity-0'
-          }`}
+        className={`pointer-events-none absolute left-1/2 top-[18%] z-[1] -translate-x-1/2 select-none transition-all duration-500 ease-out ${
+          heroWordVisible
+            ? 'translate-y-0 opacity-100'
+            : uiMode === 'hero'
+              ? '-translate-y-0 translate-y-[60px] opacity-0'
+              : '-translate-y-11 opacity-0'
+        }`}
       >
         <span className="block whitespace-nowrap text-[#1b1b1b] dark:text-[#fafafa] text-[min(22.5vw,45vh)] font-extrabold leading-[0.85] tracking-[-0.015em]">
           {heroTitle}
@@ -1681,9 +1853,13 @@ export function BooksScene({
       <canvas ref={canvasRef} className="absolute inset-0 z-[2] block h-full w-full touch-none" />
 
       {showNav && (
-        <nav className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-center justify-between px-[42px] py-[26px] max-[760px]:px-5 max-[760px]:py-[18px] transition-opacity duration-300 ${
-          uiMode === 'detail' || uiMode === 'opening' ? 'opacity-0 pointer-events-none' : 'opacity-100'
-        }`}>
+        <nav
+          className={`pointer-events-none absolute inset-x-0 top-0 z-40 flex items-center justify-between px-[42px] py-[26px] max-[760px]:px-5 max-[760px]:py-[18px] transition-opacity duration-300 ${
+            uiMode === 'detail' || uiMode === 'opening'
+              ? 'opacity-0 pointer-events-none'
+              : 'opacity-100'
+          }`}
+        >
           <div className="pointer-events-auto text-[clamp(20px,2.2vw,29px)] font-extrabold tracking-[-0.01em] text-[#1b1b1b] dark:text-[#fafafa]">
             Focused Study Materials
           </div>
@@ -1696,8 +1872,11 @@ export function BooksScene({
             type="button"
             aria-label="Previous books"
             onClick={() => shiftCarouselRef.current(-1)}
-            className={`absolute left-3 top-1/2 z-30 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[var(--bs-cream)]/90 text-[var(--bs-navy)] shadow-lg transition-all duration-300 hover:scale-105 hover:bg-[var(--bs-cream)] md:left-6 md:h-12 md:w-12 ${uiMode === 'hero' ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-              }`}
+            className={`absolute left-3 top-1/2 z-30 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[var(--bs-cream)]/90 text-[var(--bs-navy)] shadow-lg transition-all duration-300 hover:scale-105 hover:bg-[var(--bs-cream)] md:left-6 md:h-12 md:w-12 ${
+              uiMode === 'hero'
+                ? 'pointer-events-auto opacity-100'
+                : 'pointer-events-none opacity-0'
+            }`}
           >
             <ChevronLeft />
           </button>
@@ -1705,8 +1884,11 @@ export function BooksScene({
             type="button"
             aria-label="Next books"
             onClick={() => shiftCarouselRef.current(1)}
-            className={`absolute right-3 top-1/2 z-30 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[var(--bs-cream)]/90 text-[var(--bs-navy)] shadow-lg transition-all duration-300 hover:scale-105 hover:bg-[var(--bs-cream)] md:right-6 md:h-12 md:w-12 ${uiMode === 'hero' ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-              }`}
+            className={`absolute right-3 top-1/2 z-30 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[var(--bs-cream)]/90 text-[var(--bs-navy)] shadow-lg transition-all duration-300 hover:scale-105 hover:bg-[var(--bs-cream)] md:right-6 md:h-12 md:w-12 ${
+              uiMode === 'hero'
+                ? 'pointer-events-auto opacity-100'
+                : 'pointer-events-none opacity-0'
+            }`}
           >
             <ChevronRight />
           </button>
@@ -1734,8 +1916,9 @@ export function BooksScene({
       <button
         ref={closeBtnRef}
         aria-label="Close detail view"
-        className={`absolute left-1/2 top-[30px] z-40 -translate-x-1/2 inline-flex h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-[var(--bs-cream)]/40 bg-transparent text-[17px] leading-none text-[var(--bs-cream)] transition-[opacity,border-color] duration-300 delay-150 hover:border-[var(--bs-cream)]/90 max-[760px]:left-auto max-[760px]:right-[18px] max-[760px]:top-[18px] max-[760px]:translate-x-0 [-webkit-tap-highlight-color:transparent] ${uiMode === 'detail' ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-          }`}
+        className={`absolute left-1/2 top-[30px] z-40 -translate-x-1/2 inline-flex h-[52px] w-[52px] items-center justify-center rounded-full border-[1.5px] border-[var(--bs-cream)]/40 bg-transparent text-[17px] leading-none text-[var(--bs-cream)] transition-[opacity,border-color] duration-300 delay-150 hover:border-[var(--bs-cream)]/90 max-[760px]:left-auto max-[760px]:right-[18px] max-[760px]:top-[18px] max-[760px]:translate-x-0 [-webkit-tap-highlight-color:transparent] ${
+          uiMode === 'detail' ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
+        }`}
       >
         &#10005;
       </button>
@@ -1744,16 +1927,23 @@ export function BooksScene({
         <div
           ref={dpRef}
           aria-live="polite"
-          className={`absolute right-[7%] top-1/2 z-[15] w-[min(560px,42%)] -translate-y-1/2 pointer-events-none max-[760px]:right-auto max-[760px]:left-1/2 max-[760px]:top-auto max-[760px]:bottom-[3.5%] max-[760px]:w-[min(560px,92vw)] max-[760px]:-translate-x-1/2 max-[760px]:translate-y-0 ${panelVisible ? 'visible' : 'invisible delay-[500ms]'
-            }`}
+          className={`absolute right-[7%] top-1/2 z-[15] w-[min(560px,42%)] -translate-y-1/2 pointer-events-none max-[760px]:right-auto max-[760px]:left-1/2 max-[760px]:top-auto max-[760px]:bottom-[3.5%] max-[760px]:w-[min(560px,92vw)] max-[760px]:-translate-x-1/2 max-[760px]:translate-y-0 ${
+            panelVisible ? 'visible' : 'invisible delay-[500ms]'
+          }`}
         >
-          <h1 className={`m-0 text-[var(--bs-pink)] text-[clamp(52px,5.6vw,92px)] font-extrabold leading-[0.98] tracking-[-0.015em] max-[760px]:text-[clamp(36px,9.5vw,54px)] ${dpChild(50)}`}>
+          <h1
+            className={`m-0 text-[var(--bs-pink)] text-[clamp(52px,5.6vw,92px)] font-extrabold leading-[0.98] tracking-[-0.015em] max-[760px]:text-[clamp(36px,9.5vw,54px)] ${dpChild(50)}`}
+          >
             {selectedCfg?.title}
           </h1>
-          <p className={`mt-[26px] max-w-[54ch] text-[var(--bs-lav)] text-[clamp(16px,1.25vw,19px)] leading-[1.65] max-[760px]:mt-4 max-[760px]:line-clamp-4 max-[760px]:text-[15px] ${dpChild(130)}`}>
+          <p
+            className={`mt-[26px] max-w-[54ch] text-[var(--bs-lav)] text-[clamp(16px,1.25vw,19px)] leading-[1.65] max-[760px]:mt-4 max-[760px]:line-clamp-4 max-[760px]:text-[15px] ${dpChild(130)}`}
+          >
             {selectedCfg?.desc}
           </p>
-          <div className={`mt-[34px] flex items-center gap-[18px] max-[760px]:mt-[18px] ${dpChild(210)}`}>
+          <div
+            className={`mt-[34px] flex items-center gap-[18px] max-[760px]:mt-[18px] ${dpChild(210)}`}
+          >
             <div className="flex gap-[5px]">
               {[0, 1, 2, 3, 4].map((i) => (
                 <svg
@@ -1769,11 +1959,16 @@ export function BooksScene({
             <div className="text-[19px] italic text-[#98a4d6]">Goodreads</div>
             <div className="ml-auto text-[19px] italic text-[#98a4d6]">{selectedCfg?.year}</div>
           </div>
-          <div className={`mt-[26px] border-t border-[var(--bs-lav)]/[0.18] max-[760px]:mt-4 ${dpChild(270)}`} />
+          <div
+            className={`mt-[26px] border-t border-[var(--bs-lav)]/[0.18] max-[760px]:mt-4 ${dpChild(270)}`}
+          />
           <div
             className={`pointer-events-auto mt-8 inline-flex items-center gap-[10px] rounded-full bg-[#1a2140] p-[10px] shadow-[0_24px_60px_rgba(0,0,0,0.45)] max-[760px]:mt-[18px] max-[760px]:flex-wrap max-[760px]:rounded-[28px] ${dpChild(330)}`}
           >
-            <button disabled className="inline-flex h-[54px] items-center gap-[10px] rounded-full bg-[var(--bs-peri)]/20 border border-[var(--bs-peri)]/30 px-[32px] text-[16.5px] font-semibold text-[var(--bs-lav)] max-[760px]:h-12 max-[760px]:px-6 max-[760px]:text-[15px] cursor-not-allowed">
+            <button
+              disabled
+              className="inline-flex h-[54px] items-center gap-[10px] rounded-full bg-[var(--bs-peri)]/20 border border-[var(--bs-peri)]/30 px-[32px] text-[16.5px] font-semibold text-[var(--bs-lav)] max-[760px]:h-12 max-[760px]:px-6 max-[760px]:text-[15px] cursor-not-allowed"
+            >
               Coming Soon
             </button>
           </div>

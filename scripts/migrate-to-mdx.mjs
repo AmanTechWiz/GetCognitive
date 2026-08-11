@@ -7,16 +7,21 @@ const appendicesDir = path.join(process.cwd(), 'content', 'docs', 'appendices');
 const outDir = path.join(process.cwd(), 'content', 'docs', 'mdx');
 
 function slugify(value) {
-  return value.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-');
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
 }
 
 function processFile(filePath, isAppendix) {
   if (!fs.existsSync(filePath)) return;
   const content = fs.readFileSync(filePath, 'utf-8');
-  
+
   // Very hacky but effective regex to extract the slug, title, description, group, and body
-  const pageRegex = /slug:\s*\[([^\]]+)\],[\s\S]*?title:\s*'([^']+)',[\s\S]*?description:\s*'([^']+)',[\s\S]*?group:\s*'([^']+)',[\s\S]*?body:\s*`([\s\S]+?)`,/g;
-  
+  const pageRegex =
+    /slug:\s*\[([^\]]+)\],[\s\S]*?title:\s*'([^']+)',[\s\S]*?description:\s*'([^']+)',[\s\S]*?group:\s*'([^']+)',[\s\S]*?body:\s*`([\s\S]+?)`,/g;
+
   let match;
   while ((match = pageRegex.exec(content)) !== null) {
     let rawSlugArray = match[1];
@@ -26,7 +31,7 @@ function processFile(filePath, isAppendix) {
     let body = match[5];
 
     // parse slug array e.g. "'part-01', 'foundations'"
-    const slugs = rawSlugArray.split(',').map(s => s.replace(/['"\s]/g, ''));
+    const slugs = rawSlugArray.split(',').map((s) => s.replace(/['"\s]/g, ''));
     const parentSlug = slugs.join('-'); // e.g. part-01-foundations
 
     const chapterDir = path.join(outDir, parentSlug);
@@ -60,10 +65,16 @@ description: "${title}"
 category: "${group}"
 date: "2026-08-01"
 ---`;
-    
+
     // For overview, we just list the sections
-    const overviewBody = intro + '\n\n## Subchapters\n\n' + sections.map(s => `- [${s.title}](./${slugify(s.title)})`).join('\n');
-    fs.writeFileSync(path.join(chapterDir, '00-overview.mdx'), `${overviewFrontmatter}\n\n${overviewBody}`);
+    const overviewBody =
+      intro +
+      '\n\n## Subchapters\n\n' +
+      sections.map((s) => `- [${s.title}](./${slugify(s.title)})`).join('\n');
+    fs.writeFileSync(
+      path.join(chapterDir, '00-overview.mdx'),
+      `${overviewFrontmatter}\n\n${overviewBody}`,
+    );
 
     // Write Subchapters
     sections.forEach((section, index) => {
@@ -78,7 +89,10 @@ description: "${title}"
 category: "${group}"
 date: "2026-08-01"
 ---`;
-      fs.writeFileSync(path.join(chapterDir, `${slugify(childTitle)}.mdx`), `${childFrontmatter}\n\n${childBody}`);
+      fs.writeFileSync(
+        path.join(chapterDir, `${slugify(childTitle)}.mdx`),
+        `${childFrontmatter}\n\n${childBody}`,
+      );
     });
   }
 }
@@ -89,16 +103,16 @@ function run() {
   }
   fs.mkdirSync(outDir, { recursive: true });
 
-  const chapters = fs.readdirSync(docsDir).filter(f => f.endsWith('.ts'));
+  const chapters = fs.readdirSync(docsDir).filter((f) => f.endsWith('.ts'));
   for (const c of chapters) {
     processFile(path.join(docsDir, c), false);
   }
 
-  const appendices = fs.readdirSync(appendicesDir).filter(f => f.endsWith('.ts'));
+  const appendices = fs.readdirSync(appendicesDir).filter((f) => f.endsWith('.ts'));
   for (const a of appendices) {
     processFile(path.join(appendicesDir, a), true);
   }
-  
+
   // Also process pages.ts to get the overview
   processFile(path.join(process.cwd(), 'content', 'docs', 'pages.ts'), false);
 }

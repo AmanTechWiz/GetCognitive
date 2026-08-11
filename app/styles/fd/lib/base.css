@@ -120,4 +120,3 @@
 }
 
 @variant dark (&:where(.dark, .dark *));
-

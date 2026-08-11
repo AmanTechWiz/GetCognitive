@@ -2,7 +2,16 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookOpen, Book, ClipboardList, Check, ChevronRight, ChevronsUpDown, FileText, SidebarIcon } from 'lucide-react';
+import {
+  BookOpen,
+  Book,
+  ClipboardList,
+  Check,
+  ChevronRight,
+  ChevronsUpDown,
+  FileText,
+  SidebarIcon,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { FumadocsIcon } from '@/components/fumadocs-icon';
@@ -33,7 +42,15 @@ const sections = [
   },
 ];
 
-export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups: any[]; searchItems: any[] }) {
+export function DocsSidebar({
+  docs,
+  groups,
+  searchItems,
+}: {
+  docs: any[];
+  groups: any[];
+  searchItems: any[];
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -48,21 +65,24 @@ export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups
 
   useEffect(() => {
     // Find active section
-    const activeSection = sidebarTree.find((section) => 
-      isActivePage(pathname, section.page.slug) || 
-      section.chapters.some(chapter => 
-        isActivePage(pathname, chapter.page.slug) || 
-        chapter.children.some(child => isActivePage(pathname, child.page.slug))
-      )
+    const activeSection = sidebarTree.find(
+      (section) =>
+        isActivePage(pathname, section.page.slug) ||
+        section.chapters.some(
+          (chapter) =>
+            isActivePage(pathname, chapter.page.slug) ||
+            chapter.children.some((child) => isActivePage(pathname, child.page.slug)),
+        ),
     );
 
     if (activeSection) {
       setOpenGroups((current) => ({ ...current, [activeSection.page.slug[0]]: true }));
 
       // Find active chapter
-      const activeChapter = activeSection.chapters.find((chapter) => 
-        isActivePage(pathname, chapter.page.slug) || 
-        chapter.children.some(child => isActivePage(pathname, child.page.slug))
+      const activeChapter = activeSection.chapters.find(
+        (chapter) =>
+          isActivePage(pathname, chapter.page.slug) ||
+          chapter.children.some((child) => isActivePage(pathname, child.page.slug)),
       );
       if (activeChapter) {
         setOpenChapters((current) => ({ ...current, [activeChapter.page.slug.join('/')]: true }));
@@ -160,11 +180,12 @@ export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups
         <nav className="flex-1 space-y-1.5 pt-2">
           {sidebarTree.map((sectionNode) => {
             const groupSlug = sectionNode.page.slug[0];
-            const activeGroup = 
-              isActivePage(pathname, sectionNode.page.slug) || 
-              sectionNode.chapters.some(chapter => 
-                isActivePage(pathname, chapter.page.slug) || 
-                chapter.children.some(child => isActivePage(pathname, child.page.slug))
+            const activeGroup =
+              isActivePage(pathname, sectionNode.page.slug) ||
+              sectionNode.chapters.some(
+                (chapter) =>
+                  isActivePage(pathname, chapter.page.slug) ||
+                  chapter.children.some((child) => isActivePage(pathname, child.page.slug)),
               );
             const expanded = openGroups[groupSlug] ?? activeGroup;
 
@@ -175,11 +196,15 @@ export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups
                     href={`/docs/${sectionNode.page.slug.join('/')}`}
                     className={cn(
                       'flex min-h-8 w-full items-center gap-2 rounded-lg border border-transparent px-2.5 py-1 text-start text-[0.75rem] font-bold uppercase tracking-wide transition-colors hover:border-fd-border hover:bg-fd-accent/70 hover:text-fd-accent-foreground cursor-pointer',
-                      activeGroup ? 'border-fd-border bg-fd-accent text-fd-accent-foreground shadow-sm' : 'text-fd-foreground',
+                      activeGroup
+                        ? 'border-fd-border bg-fd-accent text-fd-accent-foreground shadow-sm'
+                        : 'text-fd-foreground',
                     )}
                   >
                     <BookOpen className="size-3.5 shrink-0 text-fd-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">{formatGroupTitle(sectionNode.page.title)}</span>
+                    <span className="min-w-0 flex-1 truncate">
+                      {formatGroupTitle(sectionNode.page.title)}
+                    </span>
                   </Link>
                 </div>
               );
@@ -197,26 +222,33 @@ export function DocsSidebar({ docs, groups, searchItems }: { docs: any[]; groups
                   }
                   className={cn(
                     'flex min-h-8 w-full items-center gap-2 rounded-lg border border-transparent px-2.5 py-1 text-start text-[0.75rem] font-bold uppercase tracking-wide transition-colors hover:border-fd-border hover:bg-fd-accent/70 hover:text-fd-accent-foreground cursor-pointer',
-                    activeGroup ? 'border-fd-border bg-fd-accent text-fd-accent-foreground shadow-sm' : 'text-fd-foreground',
+                    activeGroup
+                      ? 'border-fd-border bg-fd-accent text-fd-accent-foreground shadow-sm'
+                      : 'text-fd-foreground',
                   )}
                 >
                   <BookOpen className="size-3.5 shrink-0 text-fd-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">{formatGroupTitle(sectionNode.page.title)}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {formatGroupTitle(sectionNode.page.title)}
+                  </span>
                   <span className="rounded bg-fd-secondary px-1.5 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-fd-muted-foreground">
                     {sectionNode.chapters.length}
                   </span>
                   <ChevronRight
-                    className={cn('size-3.5 shrink-0 text-fd-muted-foreground transition-transform', expanded && 'rotate-90')}
+                    className={cn(
+                      'size-3.5 shrink-0 text-fd-muted-foreground transition-transform',
+                      expanded && 'rotate-90',
+                    )}
                   />
                 </button>
                 {expanded ? (
                   <div className="ms-3 mt-1.5 space-y-1 border-s border-fd-border/75 ps-2">
                     {sectionNode.chapters.map((chapter) => {
                       const chapterSlug = chapter.page.slug.join('/');
-                      const isChapterActive = 
-                        isActivePage(pathname, chapter.page.slug) || 
-                        chapter.children.some(child => isActivePage(pathname, child.page.slug));
-                      
+                      const isChapterActive =
+                        isActivePage(pathname, chapter.page.slug) ||
+                        chapter.children.some((child) => isActivePage(pathname, child.page.slug));
+
                       return (
                         <ChapterNavItem
                           key={chapterSlug}
@@ -307,7 +339,11 @@ function ChapterNavItem({
       {expanded ? (
         <div className="ms-3 mt-1.5 space-y-1 border-s border-dashed border-fd-border/70 ps-3">
           {chapter.children.map((child) => (
-            <Link key={child.page.slug.join('/')} href={`/docs/${child.page.slug.join('/')}`} className={navLinkClass(isActivePage(pathname, child.page.slug), true)}>
+            <Link
+              key={child.page.slug.join('/')}
+              href={`/docs/${child.page.slug.join('/')}`}
+              className={navLinkClass(isActivePage(pathname, child.page.slug), true)}
+            >
               {cleanTitle(child.page.title)}
             </Link>
           ))}
@@ -337,20 +373,27 @@ type SectionNode = {
 };
 
 function buildSidebarTree(docs: any[]): SectionNode[] {
-  const sections = docs.filter(p => p.slug.length === 1);
-  return sections.map(sectionPage => {
-    const chaptersForSection = docs.filter(p => p.slug.length === 2 && p.slug[0] === sectionPage.slug[0]);
-    
+  const sections = docs.filter((p) => p.slug.length === 1);
+  return sections.map((sectionPage) => {
+    const chaptersForSection = docs.filter(
+      (p) => p.slug.length === 2 && p.slug[0] === sectionPage.slug[0],
+    );
+
     return {
       page: sectionPage,
-      chapters: chaptersForSection.map(chapterPage => {
-        const subchaptersForChapter = docs.filter(p => p.slug.length === 3 && p.slug[0] === chapterPage.slug[0] && p.slug[1] === chapterPage.slug[1]);
-        
+      chapters: chaptersForSection.map((chapterPage) => {
+        const subchaptersForChapter = docs.filter(
+          (p) =>
+            p.slug.length === 3 &&
+            p.slug[0] === chapterPage.slug[0] &&
+            p.slug[1] === chapterPage.slug[1],
+        );
+
         return {
           page: chapterPage,
-          children: subchaptersForChapter.map(p => ({ page: p }))
+          children: subchaptersForChapter.map((p) => ({ page: p })),
         };
-      })
+      }),
     };
   });
 }

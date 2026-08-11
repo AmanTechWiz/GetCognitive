@@ -47,7 +47,7 @@ export function StoryControl({
       } else {
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(
-          "Context Engineering. Learn how AI agents structure, optimize, and manage prompt context across complex workflows."
+          'Context Engineering. Learn how AI agents structure, optimize, and manage prompt context across complex workflows.',
         );
         utterance.onend = () => setIsPlaying(false);
         utterance.onerror = () => setIsPlaying(false);
@@ -82,10 +82,14 @@ export function StoryControl({
       .map((res) => res.item);
   }, [query, searchItems]);
 
-  const defaultUrl = '/docs/part-i-foundations/chapter-1-from-prompt-to-production/11-the-lifecycle-of-an-ai-request';
+  const defaultUrl =
+    '/docs/part-i-foundations/chapter-1-from-prompt-to-production/11-the-lifecycle-of-an-ai-request';
 
   return (
-    <div ref={containerRef} className="overflow-hidden rounded-2xl border bg-fd-card shadow-sm relative">
+    <div
+      ref={containerRef}
+      className="overflow-hidden rounded-2xl border bg-fd-card shadow-sm relative"
+    >
       {/* Window Header */}
       <div className="flex items-center gap-2 border-b px-4 py-3">
         <div className="size-2.5 rounded-full bg-red-400" />
@@ -134,14 +138,14 @@ export function StoryControl({
             </h3>
 
             <p className="text-sm text-fd-muted-foreground">
-              Learn how AI agents structure, optimize, and manage context window limits across complex LLM workflows.
+              Learn how AI agents structure, optimize, and manage context window limits across
+              complex LLM workflows.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <div className="flex items-center gap-1 rounded-md border px-2 py-1 bg-fd-secondary/30">
-              <Clock3 className="h-3.5 w-3.5 text-brand" />
-              5 mins
+              <Clock3 className="h-3.5 w-3.5 text-brand" />5 mins
             </div>
 
             <div className="flex items-center gap-1 rounded-md border px-2 py-1 bg-fd-secondary/30">
@@ -168,11 +172,7 @@ export function StoryControl({
           </div>
 
           <div className="space-y-2">
-            {[
-              'Overview',
-              'Architecture Diagram',
-              'Human Explanation',
-            ].map((item) => (
+            {['Overview', 'Architecture Diagram', 'Human Explanation'].map((item) => (
               <a
                 key={item}
                 href={defaultUrl}
@@ -236,9 +236,7 @@ export function StoryControl({
                       </span>
                     ))}
                   </div>
-                  <h4 className="text-sm font-medium text-fd-foreground">
-                    {item.content}
-                  </h4>
+                  <h4 className="text-sm font-medium text-fd-foreground">{item.content}</h4>
                   <p className="line-clamp-1 text-[11px] text-fd-muted-foreground">
                     {item.description}
                   </p>
@@ -248,8 +246,8 @@ export function StoryControl({
           </div>
           <div className="bg-fd-secondary/50 p-2 text-[10px] text-fd-muted-foreground border-t flex items-center justify-between">
             <span>Search {searchItems.length} concepts</span>
-            <button 
-              onClick={() => setIsOpen(false)} 
+            <button
+              onClick={() => setIsOpen(false)}
               className="text-brand hover:underline font-medium"
             >
               Close

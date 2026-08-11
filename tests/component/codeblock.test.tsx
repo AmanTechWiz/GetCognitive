@@ -16,11 +16,7 @@ describe('ServerCodeBlock', () => {
 
   it('renders a title bar when title is provided', () => {
     render(
-      <ServerCodeBlock
-        code="npm install"
-        lang="bash"
-        codeblock={{ title: 'Installation' }}
-      />,
+      <ServerCodeBlock code="npm install" lang="bash" codeblock={{ title: 'Installation' }} />,
     );
     expect(screen.getByText('Installation')).toBeInTheDocument();
   });

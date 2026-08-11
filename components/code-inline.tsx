@@ -14,4 +14,3 @@ export function CodeInline({ code, className }: { code: string; className?: stri
     </code>
   );
 }
-

@@ -140,7 +140,7 @@ function TocLinks({
             link.depth === 3 ? 'ps-6 text-[0.8125rem]' : 'ps-4 text-[0.875rem]',
             activeId === link.id
               ? 'text-brand font-medium before:absolute before:left-[-1px] before:top-0 before:bottom-0 before:w-px before:bg-brand'
-              : 'text-fd-muted-foreground'
+              : 'text-fd-muted-foreground',
           )}
         >
           {link.title}

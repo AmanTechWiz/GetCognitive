@@ -73,9 +73,7 @@ test.describe('Accessibility — Docs page', () => {
     await page.goto('/docs');
     await page.waitForLoadState('networkidle');
 
-    const results = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa'])
-      .analyze();
+    const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
 
     const critical = results.violations.filter(
       (v) => v.impact === 'critical' || v.impact === 'serious',

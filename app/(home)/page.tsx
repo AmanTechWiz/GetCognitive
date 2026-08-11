@@ -2,11 +2,7 @@ import Image from 'next/image';
 import { cn } from '@/lib/cn';
 import Link from 'next/link';
 import { cva } from 'class-variance-authority';
-import {
-  FileIcon,
-  FileTextIcon,
-  SearchIcon,
-} from 'lucide-react';
+import { FileIcon, FileTextIcon, SearchIcon } from 'lucide-react';
 import { Marquee } from '@/app/(home)/marquee';
 import { ServerCodeBlock } from '@/components/codeblock';
 import { CognitiveSearchPanel } from '@/components/cognitive-search';
@@ -131,8 +127,6 @@ function BooksSection() {
     </section>
   );
 }
-
-
 
 function Aesthetics() {
   return (
@@ -271,7 +265,10 @@ function ForEngineers({ searchItems, docs }: { searchItems: any[]; docs: any[] }
         </p>
         <div className="mt-auto grid grid-cols-2 gap-2 text-xs">
           {['Writers', 'Developers', 'Students', 'AI Agents'].map((item) => (
-            <div key={item} className="rounded-xl border border-brand/30 bg-brand/10 px-3 py-2 text-brand">
+            <div
+              key={item}
+              className="rounded-xl border border-brand/30 bg-brand/10 px-3 py-2 text-brand"
+            >
               {item}
             </div>
           ))}
@@ -333,8 +330,8 @@ function ForEngineers({ searchItems, docs }: { searchItems: any[]; docs: any[] }
         </h3>
         <p className="mb-8">
           Concepts connect as <span className="text-brand">Terms</span> →{' '}
-          <span className="text-brand">Patterns</span> → <span className="text-brand">Systems</span>,
-          so readers can understand how every new AI idea fits into real engineering work.
+          <span className="text-brand">Patterns</span> → <span className="text-brand">Systems</span>
+          , so readers can understand how every new AI idea fits into real engineering work.
         </p>
         <div className="mt-auto flex flex-col gap-2 @container mask-[linear-gradient(to_bottom,white,transparent)]">
           {[
@@ -374,8 +371,9 @@ function ForEngineers({ searchItems, docs }: { searchItems: any[]; docs: any[] }
           Community-maintained knowledge.
         </h3>
         <p className="mb-4">
-          Designed for open contribution: each topic can include <span className="text-brand">sources</span>,
-          notes, diagrams, examples, and practical handbooks.
+          Designed for open contribution: each topic can include{' '}
+          <span className="text-brand">sources</span>, notes, diagrams, examples, and practical
+          handbooks.
         </p>
         <div className="flex flex-row w-fit items-center gap-4 mb-6">
           {[
@@ -413,18 +411,20 @@ function ForEngineers({ searchItems, docs }: { searchItems: any[]; docs: any[] }
           <p className="px-2 pb-2 font-medium border-b mb-2 text-neutral-500 dark:text-neutral-400">
             Cognitive Library
           </p>
-          {['Agentic Retrieval', 'Context Engineering', 'AI Memory', 'Loop Evaluation'].map((page) => (
-            <div
-              key={page}
-              className="flex items-center gap-2 p-2 rounded-lg hover:bg-neutral-400/20"
-            >
-              <FileIcon className="stroke-neutral-500 size-4 dark:stroke-neutral-400" />
-              <span className="text-sm">{page}</span>
-              <div className="px-3 py-1 font-mono rounded-full bg-brand text-xs text-brand-foreground ms-auto">
-                Concept
+          {['Agentic Retrieval', 'Context Engineering', 'AI Memory', 'Loop Evaluation'].map(
+            (page) => (
+              <div
+                key={page}
+                className="flex items-center gap-2 p-2 rounded-lg hover:bg-neutral-400/20"
+              >
+                <FileIcon className="stroke-neutral-500 size-4 dark:stroke-neutral-400" />
+                <span className="text-sm">{page}</span>
+                <div className="px-3 py-1 font-mono rounded-full bg-brand text-xs text-brand-foreground ms-auto">
+                  Concept
+                </div>
               </div>
-            </div>
-          ))}
+            ),
+          )}
         </div>
 
         <div className="absolute bottom-8 right-4 w-[80%] shadow-lg shadow-black">
@@ -438,10 +438,7 @@ function ForEngineers({ searchItems, docs }: { searchItems: any[]; docs: any[] }
         <p className="mb-6">
           Search across real Cognitive articles, headings, and body text as new AI terms are added.
         </p>
-        <Link
-          href="/docs"
-          className={cn(buttonVariants({ className: 'w-fit mb-8' }))}
-        >
+        <Link href="/docs" className={cn(buttonVariants({ className: 'w-fit mb-8' }))}>
           Search Library
         </Link>
         <div className="relative mt-auto -mr-16 -mb-16 mask-[linear-gradient(to_bottom_right,white_20%,transparent_90%)]">
@@ -496,7 +493,6 @@ function CompactBlogPostPreview({ compact = false }: { compact?: boolean }) {
     </div>
   );
 }
-
 
 function Search() {
   return (

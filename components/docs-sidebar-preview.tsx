@@ -3,13 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  BookOpen,
-  ChevronRight,
-  Sparkles,
-  FileText,
-  Search,
-} from 'lucide-react';
+import { BookOpen, ChevronRight, Sparkles, FileText, Search } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 type SubchapterNode = {
@@ -31,7 +25,7 @@ function buildSidebarTree(docs: any[]): SectionNode[] {
   const sections = docs.filter((p) => p.slug && p.slug.length === 1);
   return sections.map((sectionPage) => {
     const chaptersForSection = docs.filter(
-      (p) => p.slug && p.slug.length === 2 && p.slug[0] === sectionPage.slug[0]
+      (p) => p.slug && p.slug.length === 2 && p.slug[0] === sectionPage.slug[0],
     );
 
     return {
@@ -42,7 +36,7 @@ function buildSidebarTree(docs: any[]): SectionNode[] {
             p.slug &&
             p.slug.length === 3 &&
             p.slug[0] === chapterPage.slug[0] &&
-            p.slug[1] === chapterPage.slug[1]
+            p.slug[1] === chapterPage.slug[1],
         );
 
         return {
@@ -55,9 +49,7 @@ function buildSidebarTree(docs: any[]): SectionNode[] {
 }
 
 function cleanTitle(title: string) {
-  return title
-    .replace(/\s+-\s+Overview$/, '')
-    .replace(/^Chapter\s+(\d+)\s*[-:]\s*/, '$1. ');
+  return title.replace(/\s+-\s+Overview$/, '').replace(/^Chapter\s+(\d+)\s*[-:]\s*/, '$1. ');
 }
 
 function formatGroupTitle(group: string) {
@@ -146,7 +138,7 @@ export function DocsSidebarPreview({ docs = [] }: { docs?: any[] }) {
                   <ChevronRight
                     className={cn(
                       'size-3.5 text-fd-muted-foreground transition-transform duration-200 shrink-0',
-                      isGroupOpen && 'rotate-90'
+                      isGroupOpen && 'rotate-90',
                     )}
                   />
                 </button>
@@ -173,7 +165,7 @@ export function DocsSidebarPreview({ docs = [] }: { docs?: any[] }) {
                                 <ChevronRight
                                   className={cn(
                                     'size-3 transition-transform duration-200 shrink-0',
-                                    isChapterOpen && 'rotate-90'
+                                    isChapterOpen && 'rotate-90',
                                   )}
                                 />
                               </button>
@@ -184,7 +176,7 @@ export function DocsSidebarPreview({ docs = [] }: { docs?: any[] }) {
                                 'flex-1 min-w-0 rounded-md px-2 py-1 text-[11px] transition-colors flex items-center justify-between group overflow-hidden',
                                 isActive
                                   ? 'bg-brand/10 text-brand font-medium border border-brand/20'
-                                  : 'text-fd-muted-foreground hover:bg-fd-accent/60 hover:text-fd-foreground'
+                                  : 'text-fd-muted-foreground hover:bg-fd-accent/60 hover:text-fd-foreground',
                               )}
                             >
                               <span className="min-w-0 flex-1 truncate text-ellipsis whitespace-nowrap">
@@ -208,7 +200,7 @@ export function DocsSidebarPreview({ docs = [] }: { docs?: any[] }) {
                                       'block rounded px-2 py-0.5 text-[10.5px] transition-colors truncate text-ellipsis whitespace-nowrap overflow-hidden',
                                       isSubActive
                                         ? 'text-brand font-semibold'
-                                        : 'text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40'
+                                        : 'text-fd-muted-foreground hover:text-fd-foreground hover:bg-fd-accent/40',
                                     )}
                                   >
                                     {cleanTitle(sub.page.title)}
