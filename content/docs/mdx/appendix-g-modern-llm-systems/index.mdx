@@ -1,22 +1,62 @@
 ---
 title: Appendix G — Modern LLM Systems
-description: 'Efficient inference, building models, and the future of language models'
+description: 'KV cache, quantization, speculative decoding, inference systems, reasoning models, and the future'
 isChapterOverview: true
-lastUpdatedDate: '2026-08-08'
+lastUpdatedDate: '2026-08-11'
 ---
 
 # Appendix G — Modern LLM Systems
 
-We've journeyed from the basics of language representation through transformers, training, alignment, and all the supporting technologies.
+You've built a GPT. You understand transformers, training, alignment, and how ChatGPT works. This final appendix is about what happens when you try to run these models at real scale — and where the field is pushing next.
 
-This final appendix covers the practical and forward-looking aspects:
+Running inference on a 70B model for thousands of concurrent users isn't the same problem as running it once on your laptop. At scale, every inefficiency compounds. Memory fragmentation wastes GPU capacity. Sequential token generation bottlenecks throughput. Full-precision weights don't fit in memory at all. Naive serving means users wait.
 
-1. **Efficient Serving**: How to make LLMs practical and affordable
-2. **Building Your Own**: Learning by doing, understanding through implementation
-3. **The Future**: Where the field is heading
+This appendix covers the engineering and research that makes modern LLM deployment practical.
 
-This appendix answers "What do we do with all this knowledge?" and "Where does it go from here?"
+---
 
-The conclusion: LLMs are not a solved problem. The field is rapidly evolving, with new techniques emerging constantly. The fundamentals you've learned—transformers, next-token prediction, attention, scaling—form the foundation. But innovation continues at an accelerating pace.
+## What's in this appendix
 
-Understanding these fundamentals means you can grasp new developments as they emerge.
+**Chapter 23 — KV Cache**
+
+Every decode step recomputes K and V vectors for all previous tokens. At 1,000 tokens, 99.8% of this is redundant. KV cache stores what's already been computed and reuses it. Output is mathematically identical — it's memoization, not approximation. This chapter covers the math, the implementation, the memory cost, and GQA/MQA variants that shrink the cache.
+
+**Chapter 24 — Quantization**
+
+GPT-3 in float32 is 700 GB. No GPU has that. Quantization maps floating-point weights to 8-bit or 4-bit integers — 2–8× smaller, much faster to read from memory. This chapter covers symmetric vs asymmetric quantization (with full ASCII math), the outlier problem that makes naive 4-bit fail, and how GPTQ and AWQ solve it. Includes memory tables for real models across precisions.
+
+**Chapter 25 — Speculative Decoding**
+
+Tokens are generated one at a time. KV cache doesn't fix that. Speculative decoding does: a small draft model guesses K tokens cheaply, the large target model verifies all K in one parallel forward pass. Accept the correct ones, sample a correction at the first wrong one. The mathematics guarantee the output distribution is identical to running the target model alone — not an approximation. Speedup: 2–3× for matched model families.
+
+**Chapter 26 — Inference Systems at Scale**
+
+Running one request is easy. Running thousands simultaneously is a different problem. This chapter covers TTFT vs TPOT metrics, the KV cache memory fragmentation problem (the same fragmentation OS designers solved with paging), PagedAttention (vLLM's core innovation), continuous batching (from 60% to 95% GPU utilization), and prefix caching. Plus: prefill/decode disaggregation for large-scale deployments.
+
+**Chapter 27 — Chain-of-Thought and Reasoning Models**
+
+A transformer has fixed compute depth per forward pass. Multi-step reasoning problems exceed that budget. Chain-of-thought sidesteps this by writing intermediate steps into context — the context window handles state, each step only needs one easy prediction. This chapter covers few-shot and zero-shot CoT, self-consistency (sample N chains, vote), thinking models (o1, DeepSeek-R1 and RL-based reasoning training), and test-time compute scaling — the new axis of improvement beyond parameters and data.
+
+**Chapter 28 — The Future of Language Models**
+
+Where the field is heading. Mixture of Experts (MoE): routing tokens to specialized expert FFNs so active parameters << total parameters. Long context: RoPE interpolation, Sliding Window Attention, Mamba/SSMs, and the O(n²) wall. Multimodal models: how images become token sequences (patchify → patch embedding), and how attention handles cross-modal grounding. The open problems that haven't been solved. The scaling debate.
+
+---
+
+## The arc
+
+```
+Single-request efficiency:
+  KV Cache (Ch23) → Quantization (Ch24) → Speculative Decoding (Ch25)
+
+Multi-request systems:
+  Inference at Scale (Ch26): PagedAttention, continuous batching, prefix caching
+
+New capabilities:
+  Reasoning (Ch27): chain-of-thought, thinking models, test-time scaling
+
+Where it's going:
+  Future (Ch28): MoE, long context, multimodal, open problems
+```
+
+These aren't independent topics. KV cache pressure motivates GQA and PagedAttention. Quantization reduces the memory cost that constrains how many concurrent requests can be served. Speculative decoding requires enough VRAM to hold both draft and target models. Understanding any one properly requires knowing the constraints from the others.

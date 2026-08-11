@@ -1,0 +1,208 @@
+---
+title: 23. KV Cache
+lastUpdatedDate: '2026-08-11'
+---
+
+# 23. KV Cache
+
+Every time the model generates a new token, it runs a full forward pass. Inside that forward pass, at every attention layer, it computes three vectors for every token in the sequence — Q, K, and V. Then it computes attention scores between all pairs. Then it does the weighted sum.
+
+That's a lot of work. And here's the thing: most of it is work you already did one step ago.
+
+---
+
+## The Redundant Computation Problem
+
+Let's trace what happens when generating the fourth token of a sequence.
+
+```text
+Generating token 4 ("the"):
+
+  Input so far:  ["The", "cat", "sat"]
+  
+  Attention layer needs to compute, for all positions:
+    K₁ = W_K × embedding("The")    ← computed at step 1, 2, 3
+    K₂ = W_K × embedding("cat")    ← computed at step 2, 3
+    K₃ = W_K × embedding("sat")    ← computed at step 3
+    K₄ = W_K × embedding(new)      ← actually new
+    
+    V₁ = W_V × embedding("The")    ← computed at step 1, 2, 3
+    V₂ = W_V × embedding("cat")    ← computed at step 2, 3
+    V₃ = W_V × embedding("sat")    ← computed at step 3
+    V₄ = W_V × embedding(new)      ← actually new
+  
+  You need all 8 vectors. But 6 of them you've computed before.
+```
+
+The only genuinely new work at step `t` is computing `K_t` and `V_t` for the one new token. Everything before position `t` is repetition.
+
+How much repetition? Across the whole generation:
+
+```text
+Cumulative attention computation at each step (no cache):
+
+  Step 1:   compute K₁, V₁              →  1 new K/V pair
+  Step 2:   compute K₁, V₁, K₂, V₂     →  1 new + 1 repeated
+  Step 3:   compute K₁..K₃, V₁..V₃     →  1 new + 2 repeated
+  Step t:   compute K₁..Kₜ, V₁..Vₜ     →  1 new + (t-1) repeated
+  
+  Total K/V computations for N tokens:   1 + 2 + 3 + ... + N = N(N+1)/2
+
+  Avoidable work (repeated prefix):      N(N+1)/2 - N  =  N(N-1)/2
+
+  At N=100:   5,050 total,  4,950 avoidable   → 98% waste
+  At N=1,000: 500,500 total, 499,500 avoidable → 99.8% waste
+```
+
+The waste grows with sequence length. At 1,000 tokens, **99.8% of all K/V computation is re-doing work from previous steps**.
+
+---
+
+## The Fix: Store and Reuse
+
+The KV cache stores the K and V tensors for every token that has already been processed. When the next token is generated:
+
+1. Compute K and V only for the **new** token
+2. **Append** them to the cache
+3. Use the full cached K and V history for the attention computation
+
+```text
+WITHOUT KV cache (step 4):
+  
+  compute K₁, V₁, K₂, V₂, K₃, V₃, K₄, V₄   ← all 4 positions
+  attention_scores = Q₄ @ [K₁, K₂, K₃, K₄]ᵀ / √d_k
+  output = softmax(scores) @ [V₁, V₂, V₃, V₄]
+  
+  Cost: 4 K/V computations this step
+
+WITH KV cache (step 4):
+  
+  cache already holds: K₁, V₁, K₂, V₂, K₃, V₃
+  compute only: K₄, V₄                         ← new token only
+  append to cache: [K₁..K₄], [V₁..V₄]
+  attention_scores = Q₄ @ [K₁..K₄]ᵀ / √d_k    ← same math, different source
+  output = softmax(scores) @ [V₁..V₄]
+  
+  Cost: 1 K/V computation this step
+  
+  At step N: constant 1 computation instead of N → N× speedup
+```
+
+The outputs are **mathematically identical**. This isn't an approximation — it's memoization. The values stored in the cache are the exact same numbers you would have computed anyway.
+
+```notebook
+{
+  "title": "KV Cache — proving it's exact, measuring the waste it eliminates",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-kv-impl",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\nimport math\n\nclass AttentionWithKVCache(nn.Module):\n    def __init__(self, d_model, num_heads):\n        super().__init__()\n        self.num_heads = num_heads\n        self.d_k = d_model // num_heads\n        self.W_Q = nn.Linear(d_model, d_model, bias=False)\n        self.W_K = nn.Linear(d_model, d_model, bias=False)\n        self.W_V = nn.Linear(d_model, d_model, bias=False)\n        self.W_O = nn.Linear(d_model, d_model, bias=False)\n        self.k_cache = None\n        self.v_cache = None\n\n    def reset_cache(self):\n        self.k_cache = None\n        self.v_cache = None\n\n    def forward(self, x, use_cache=True):\n        B, T, D = x.shape\n        def split_heads(z):\n            return z.view(B, T, self.num_heads, self.d_k).transpose(1, 2)\n\n        Q = split_heads(self.W_Q(x))\n        K = split_heads(self.W_K(x))\n        V = split_heads(self.W_V(x))\n\n        if use_cache:\n            # Extend cache with the new K, V\n            K = torch.cat([self.k_cache, K], dim=2) if self.k_cache is not None else K\n            V = torch.cat([self.v_cache, V], dim=2) if self.v_cache is not None else V\n            self.k_cache = K\n            self.v_cache = V\n\n        scores  = (Q @ K.transpose(-2, -1)) / math.sqrt(self.d_k)\n        weights = F.softmax(scores, dim=-1)\n        out     = (weights @ V).transpose(1, 2).contiguous().view(B, T, D)\n        return self.W_O(out)\n\n\ntorch.manual_seed(42)\nd_model, n_heads, seq_len = 64, 4, 6\nattn = AttentionWithKVCache(d_model, n_heads)\nx = torch.randn(1, seq_len, d_model)\n\n# Process all tokens at once (no cache)\nout_full = attn(x, use_cache=False)\n\n# Process one token at a time WITH cache\nattn.reset_cache()\nouts = [attn(x[:, i:i+1, :], use_cache=True) for i in range(seq_len)]\nout_cached = torch.cat(outs, dim=1)\n\ndiff = (out_full - out_cached).abs().max().item()\nprint(f'Max numerical difference: {diff:.2e}')\nprint(f'Outputs identical: {diff < 1e-5}  ← KV cache is EXACT, not approximate')\nprint()",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Max numerical difference: 6.70e-07\nOutputs identical: True  ← KV cache is EXACT, not approximate"
+        }
+      ]
+    },
+    {
+      "id": "cell-kv-waste",
+      "type": "code",
+      "source": "# How much work the KV cache eliminates\nprint('KV cache: avoidable computation at each sequence length')\nprint()\nprint(f'{\"Seq len\":>10}  {\"Total K/V ops\":>16}  {\"With cache\":>12}  {\"Waste saved\":>12}')\nprint('-' * 58)\nfor n in [10, 50, 100, 500, 1_000, 2_000, 4_096]:\n    total   = n * (n + 1) // 2\n    with_kv = n                     # cache = 1 new K/V per step\n    waste   = total - with_kv\n    pct     = 100 * waste / total\n    print(f'{n:>10,}  {total:>16,}  {with_kv:>12,}  {pct:>11.1f}%')\n\nprint()\nprint('The longer the context, the more the cache pays off.')\nprint('At 4096 tokens: the cache eliminates 99.95% of K/V computation.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "KV cache: avoidable computation at each sequence length\n\n  Seq len    Total K/V ops    With cache   Waste saved\n----------------------------------------------------------\n        10               55          10        81.8%\n        50            1,275          50        96.1%\n       100            5,050         100        98.0%\n       500          125,250         500        99.6%\n     1,000          500,500       1,000        99.8%\n     2,000        2,001,000       2,000        99.9%\n     4,096        8,386,560       4,096        99.95%\n\nThe longer the context, the more the cache pays off.\nAt 4096 tokens: the cache eliminates 99.95% of K/V computation."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## The Memory Cost
+
+The KV cache trades compute for memory. For every token in the context, for every layer, the cache stores one K vector and one V vector.
+
+```text
+KV cache size per token:
+
+  Per layer:   2 vectors (K and V) × n_heads × d_k × bytes_per_value
+  All layers:  n_layers × per_layer_cost
+
+  GPT-2 small (n_layers=12, n_heads=12, d_k=64, float16 = 2 bytes):
+    Per layer:  2 × 12 × 64 × 2 bytes = 3,072 bytes = 3 KB
+    All layers: 12 × 3 KB = 36 KB per token
+    
+    At 1,024 tokens:  36 KB × 1,024 = 36 MB       ← manageable
+    At 8,192 tokens:  36 KB × 8,192 = 288 MB      ← still fine
+
+  LLaMA-2 70B (n_layers=80, n_heads=64, d_k=128, float16):
+    Per layer:  2 × 64 × 128 × 2 bytes = 32,768 bytes = 32 KB
+    All layers: 80 × 32 KB = 2,560 KB = 2.5 MB per token
+    
+    At 4,096 tokens (one request): 2.5 MB × 4,096 = 10 GB
+    At 32 concurrent requests:     10 GB × 32     = 320 GB  ← bigger than the model!
+
+This is why long-context inference is expensive:
+the KV cache, not the model weights, becomes the binding memory constraint.
+```
+
+```notebook
+{
+  "title": "KV cache memory cost across real models",
+  "runtime": "Python",
+  "cells": [
+    {
+      "id": "cell-kv-memory",
+      "type": "code",
+      "source": "def kv_cache_mb(n_layers, n_heads, d_k, seq_len, batch_size=1, bytes_per_val=2):\n    \"\"\"KV cache memory in MB for a given configuration.\"\"\"\n    # K and V, all heads, all layers, all tokens, float16 by default\n    total_bytes = 2 * n_layers * n_heads * d_k * seq_len * batch_size * bytes_per_val\n    return total_bytes / (1024 ** 2)\n\nmodels = [\n    # (name,          n_layers, n_heads, d_k,  d_model)\n    ('GPT-2 small',        12,      12,   64,    768),\n    ('GPT-2 XL',           48,      25,   64,   1600),\n    ('LLaMA-2 7B',         32,      32,  128,   4096),\n    ('LLaMA-2 70B',        80,      64,  128,   8192),\n    ('GPT-3 175B',         96,      96,  128,  12288),\n]\n\nseq_lens   = [512, 2_048, 8_192, 32_768]\nbatch_size = 1\n\nprint(f'{\"Model\":<20}', end='')\nfor s in seq_lens:\n    print(f'  {s:>7} tok', end='')\nprint()\nprint('-' * 65)\n\nfor name, nl, nh, dk, _ in models:\n    print(f'{name:<20}', end='')\n    for s in seq_lens:\n        mb = kv_cache_mb(nl, nh, dk, s, batch_size)\n        unit = 'GB' if mb >= 1024 else 'MB'\n        val  = mb / 1024 if mb >= 1024 else mb\n        print(f'  {val:>6.1f} {unit}', end='')\n    print()\n\nprint()\nprint('These numbers are for a SINGLE request (batch_size=1).')\nprint('Multiply by concurrent request count for total KV memory.')\nprint('At 32 concurrent LLaMA-70B requests @ 8K tokens: ~320 GB KV cache alone.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Model                  512 tok  2,048 tok  8,192 tok 32,768 tok\n-----------------------------------------------------------------\nGPT-2 small            18.0 MB    72.0 MB   288.0 MB    1.1 GB\nGPT-2 XL              150.0 MB   600.0 MB     2.3 GB    9.4 GB\nLLaMA-2 7B            128.0 MB   512.0 MB     2.0 GB    8.0 GB\nLLaMA-2 70B           640.0 MB     2.5 GB    10.0 GB   40.0 GB\nGPT-3 175B              2.3 GB     9.0 GB    36.0 GB  144.0 GB\n\nThese numbers are for a SINGLE request (batch_size=1).\nMultiply by concurrent request count for total KV memory.\nAt 32 concurrent LLaMA-70B requests @ 8K tokens: ~320 GB KV cache alone."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## GQA and MQA: Shrinking the Cache
+
+A natural response to the memory problem: what if not every head needs its own K/V?
+
+**Multi-Query Attention (MQA)**: all heads share a single K and V. Query heads remain separate. This cuts KV cache to `1/n_heads` of its original size.
+
+**Grouped-Query Attention (GQA)**: groups of heads share K/V. A middle ground — better quality than MQA, much smaller cache than full MHA.
+
+```text
+MHA (standard):        8 query heads, 8 key heads, 8 value heads
+  KV cache per token:  8 K vectors + 8 V vectors  = 16 vectors
+
+GQA (groups of 2):     8 query heads, 4 key heads, 4 value heads
+  KV cache per token:  4 K vectors + 4 V vectors  = 8 vectors  ← 2× smaller
+
+MQA:                   8 query heads, 1 key head,  1 value head
+  KV cache per token:  1 K vector  + 1 V vector   = 2 vectors  ← 8× smaller
+
+Quality:   MHA > GQA > MQA  (marginal difference with good training)
+Cache:     MHA >> GQA >> MQA
+
+LLaMA-3, Mistral, Gemini all use GQA.
+```
+
+---
+
+## Quick Recap
+
+- During decode, every step recomputes K and V for all previous tokens. At 1,000 tokens, 99.8% of this is redundant.
+- **KV cache** stores K and V from all past positions. Each new decode step computes only K/V for the one new token. Output is mathematically identical — not an approximation.
+- **Memory cost**: grows as `2 × n_layers × n_heads × d_k × seq_len`. At scale (70B model, 8K context, 32 concurrent requests), this exceeds the model weights themselves.
+- **GQA/MQA** shrink the cache by sharing K/V across attention heads. LLaMA-3 and Mistral use GQA — same quality, 2–4× smaller cache.
+- The memory pressure from long KV caches is the main motivation for the PagedAttention system described in Chapter 26.

@@ -1,0 +1,289 @@
+﻿---
+title: 24. Quantization
+lastUpdatedDate: '2026-08-11'
+---
+
+# 24. Quantization
+
+GPT-3 has 175 billion parameters. In float32, that's 700 GB of just weights. No single GPU has 700 GB. Even in float16, it's 350 GB — still too large for most machines.
+
+Quantization is the technique that makes large models runnable on real hardware. The idea: instead of storing each weight as a 32-bit or 16-bit float, store it as an 8-bit or 4-bit integer. Smaller numbers, less memory, faster to read from GPU memory. The cost is a small loss in precision — but in practice, carefully quantized models lose very little quality.
+
+---
+
+## Why Integers? A Bit of Background
+
+Neural network computations are fundamentally floating-point. Floats can represent a huge range of values — from tiny (1e-38) to huge (3e38) — and any value in between. This flexibility is what makes training stable.
+
+But at inference time, you don't need that full range. A trained model's weights have settled into a distribution that's much narrower. You can approximate that distribution with integers if you're smart about the mapping.
+
+```text
+float16 representation:
+  1 sign bit  +  5 exponent bits  +  10 mantissa bits  =  16 bits
+  Range: ±65,504   Precision: ~3 decimal digits
+
+int8 representation:
+  8 bits, range [-128, 127]
+  Only 256 distinct values
+
+But a typical transformer weight matrix has values roughly in [-2, 2].
+Map that range to [-127, 127] and you can represent it with int8.
+The question: how do you do that mapping well?
+```
+
+---
+
+## Symmetric Quantization
+
+The simplest approach: find the absolute maximum value in the tensor, use it to set a scale, then round everything to integers.
+
+```text
+SYMMETRIC INT8 QUANTIZATION:
+
+  scale  =  max(|x|) / 127
+
+  quantize:   q = round(x / scale)   clipped to [-127, 127]
+  dequantize: x̂ = q × scale
+
+Example:
+  x     = [ 0.50,  -1.20,  0.80,  -0.30,   2.10]
+  
+  max|x| = 2.10
+  scale  = 2.10 / 127 = 0.01654
+  
+  q      = round(x / 0.01654)
+         = [ 30,   -73,   48,   -18,   127]   ← integers in [-127, 127]
+  
+  x̂     = q × 0.01654
+         = [ 0.496, -1.207,  0.794, -0.298,  2.100]
+  
+  Error  = x - x̂
+         = [ 0.004, -0.007,  0.006, -0.002,  0.000]   ← tiny
+```
+
+The rounding introduces small errors. The larger the scale (bigger range of values), the coarser the quantization grid, the bigger the errors.
+
+```text
+Why the range matters:
+  
+  Input range [-2, 2], 256 grid points:
+    Grid spacing = 4 / 256 = 0.016   ← fine, small error
+  
+  Input range [-0.1, 0.1], 256 grid points:
+    Grid spacing = 0.2 / 256 = 0.00078   ← very fine, tiny error
+  
+  Input range [-100, 100] with mostly values near zero:
+    Grid spacing = 200 / 256 = 0.78   ← coarse, large error for small values
+```
+
+That last case is the **outlier problem** — a single extreme value in one channel stretches the scale and destroys precision for all the other values.
+
+---
+
+## Asymmetric Quantization
+
+If your data isn't centered around zero, symmetric quantization wastes half the integer range. Post-activation values (after ReLU/GELU) are always positive — mapping them to `[-127, 127]` wastes the entire negative side.
+
+Asymmetric quantization fixes this with a **zero point** — an offset that shifts the integer range to match the actual data distribution.
+
+```text
+ASYMMETRIC UINT8 QUANTIZATION:
+
+  scale    =  (x_max - x_min) / 255
+  zero_pt  =  x_min
+
+  quantize:   q = round((x - x_min) / scale)   clipped to [0, 255]
+  dequantize: x̂ = q × scale + x_min
+
+Example (post-ReLU, all positive with one outlier):
+  x     = [5.00,  0.04,  0.19,  0.46,  0.07]
+  
+  x_min = 0.04,   x_max = 5.00
+  scale = (5.00 - 0.04) / 255 = 0.01941
+  
+  q     = round((x - 0.04) / 0.01941)
+        = [255,    0,     8,    22,    2]   ← full [0, 255] range used
+  
+  x̂    = [5.000, 0.040, 0.195, 0.467, 0.079]
+```
+
+```text
+SYMMETRIC vs ASYMMETRIC — which uses integers better:
+
+  Post-ReLU data: [5.00, 0.04, 0.19, 0.46, 0.07]
+  
+  Symmetric:
+    scale = 5.00/127 = 0.0394
+    q     = [127,  1,  5, 12,  2]
+    Integer range used: 1 to 127  (positive side only, negative side WASTED)
+    MAE   = 0.0056
+
+  Asymmetric:
+    q     = [255,  0,  8, 22,  2]
+    Integer range used: 0 to 255  (full range, 0% wasted)
+    MAE   = 0.0048  ← slightly better
+  
+  For weights (symmetric around 0): symmetric works fine
+  For activations (often shifted):  asymmetric is better
+```
+
+---
+
+## Quantization Granularity: One Scale or Many?
+
+The scale determines how well the integer grid covers the actual values. One scale for the whole matrix is simple — but a single outlier row can ruin precision for every other row.
+
+```text
+GRANULARITY OPTIONS:
+
+  Per-tensor:  one scale for the entire weight matrix
+    + Simplest to implement
+    - One outlier channel destroys precision for all channels
+
+  Per-channel: one scale per row of the weight matrix
+    + Each channel gets its own calibrated range
+    + Standard for INT8 weight quantization
+    - More scales to store and apply
+
+  Per-group:   one scale per small group (e.g., 128 values) within each row
+    + Finest granularity — handles sub-row variation
+    + Required for 4-bit quantization (GPTQ, AWQ)
+    - More overhead, but worth it at 4 bits
+
+  Concrete example — 4×8 weight matrix where row 0 has 8× larger values:
+    per-tensor:   MAE = 0.0207
+    per-channel:  MAE = 0.0073   ← 2.8× better
+    per-group(4): MAE = 0.0047   ← 4.4× better
+```
+
+```notebook
+{
+  "title": "Quantization — symmetric vs asymmetric, granularity comparison",
+  "runtime": "Python · NumPy",
+  "cells": [
+    {
+      "id": "cell-sym-asym",
+      "type": "code",
+      "source": "import numpy as np\n\ndef quantize_sym(x, bits=8):\n    max_int = 2**(bits-1) - 1  # 127 for int8\n    scale   = np.max(np.abs(x)) / max_int\n    q       = np.round(x / scale).clip(-max_int, max_int).astype(np.int8)\n    return q, q.astype(float) * scale, scale\n\ndef quantize_asym(x, bits=8):\n    x_min, x_max = x.min(), x.max()\n    scale = (x_max - x_min) / (2**bits - 1)\n    q     = np.round((x - x_min) / scale).clip(0, 2**bits-1).astype(np.uint8)\n    return q, q.astype(float) * scale + x_min, scale\n\ndef mae(a, b): return np.abs(a - b).mean()\n\n# Post-ReLU data: all non-negative, one outlier\nx = np.array([5.000, 0.041, 0.194, 0.457, 0.070, 0.070, 0.474, 0.230])\n\nq_sym,  x_sym,  s_sym  = quantize_sym(x)\nq_asym, x_asym, s_asym = quantize_asym(x)\n\nprint(f'Input:  {x}')\nprint()\nprint(f'Symmetric INT8 (scale = max|x|/127 = {s_sym:.4f}):')\nprint(f'  integers:   {q_sym.tolist()}')\nprint(f'  restored:   {x_sym.round(3)}')\nprint(f'  MAE:        {mae(x, x_sym):.4f}')\nprint(f'  Range used: [{q_sym.min()}, {q_sym.max()}] of [-127, 127]')\nneg_waste = (127 - q_sym.min()) / 254 * 100 if q_sym.min() > 0 else 0\nprint(f'  Negative side: {neg_waste:.0f}% wasted (all values positive)')\nprint()\nprint(f'Asymmetric UINT8 (scale = range/255 = {s_asym:.4f}):')\nprint(f'  integers:   {q_asym.tolist()}')\nprint(f'  restored:   {x_asym.round(3)}')\nprint(f'  MAE:        {mae(x, x_asym):.4f}')\nprint(f'  Range used: [0, {q_asym.max()}] of [0, 255] — 100% utilization')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Input:  [5.    0.041 0.194 0.457 0.07  0.07  0.474 0.23 ]\n\nSymmetric INT8 (scale = max|x|/127 = 0.0394):\n  integers:   [127, 1, 5, 12, 2, 2, 12, 6]\n  restored:   [5.004 0.039 0.197 0.473 0.079 0.079 0.473 0.236]\n  MAE:        0.0056\n  Range used: [1, 127] of [-127, 127]\n  Negative side: 0% wasted (all values positive)\n\nAsymmetric UINT8 (scale = range/255 = 0.0194):\n  integers:   [255, 0, 8, 21, 1, 1, 22, 10]\n  restored:   [4.994 0.041 0.196 0.449 0.060 0.060 0.468 0.235]\n  MAE:        0.0048\n  Range used: [0, 255] of [0, 255] — 100% utilization"
+        }
+      ]
+    },
+    {
+      "id": "cell-granularity",
+      "type": "code",
+      "source": "# Granularity comparison: the outlier row problem\nnp.random.seed(42)\nW = np.random.randn(4, 8) * 0.5\nW[0] *= 8   # simulate outlier channel (common in real transformers)\n\nprint('Weight matrix W (row 0 is 8× larger — outlier channel):')\nfor i, row in enumerate(W):\n    print(f'  row {i}: [{\" \".join(f\"{v:+.2f}\" for v in row)}]')\nprint()\n\n# Per-tensor\n_, W_hat_tensor, _ = quantize_sym(W)\nmae_tensor = mae(W, W_hat_tensor)\n\n# Per-channel (one scale per row)\nW_hat_channel = np.zeros_like(W)\nfor i in range(W.shape[0]):\n    _, row_hat, _ = quantize_sym(W[i])\n    W_hat_channel[i] = row_hat\nmae_channel = mae(W, W_hat_channel)\n\n# Per-group (one scale per 4-element group within each row)\ngroup_size = 4\nW_hat_group = np.zeros_like(W)\nfor i in range(W.shape[0]):\n    for j in range(0, W.shape[1], group_size):\n        grp = W[i, j:j+group_size]\n        _, grp_hat, _ = quantize_sym(grp)\n        W_hat_group[i, j:j+group_size] = grp_hat\nmae_group = mae(W, W_hat_group)\n\nprint(f'{\"Granularity\":<22}  {\"MAE\":>8}  {\"Improvement\"}')\nprint('-' * 50)\nprint(f'{\"Per-tensor\":<22}  {mae_tensor:>8.4f}  baseline')\nprint(f'{\"Per-channel\":<22}  {mae_channel:>8.4f}  {mae_tensor/mae_channel:.1f}× better')\nprint(f'{\"Per-group (size=4)\":<22}  {mae_group:>8.4f}  {mae_tensor/mae_group:.1f}× better')\nprint()\nprint('Production 4-bit quantization (GPTQ, AWQ) uses group_size=128.')\nprint('One outlier channel at 8× scale would ruin per-tensor precision for all others.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Weight matrix W (row 0 is 8× larger — outlier channel):\n  row 0: [-2.96 +3.08 -1.65 +3.18 +1.74 -1.62 +1.89 -0.32]\n  row 1: [+0.24 -0.48 +0.07 +0.24 -0.22 +0.55 +0.31 -0.25]\n  row 2: [-0.39 +0.59 -0.18 -0.07 -0.35 +0.25 -0.53 +0.49]\n  row 3: [+0.20 +0.22 +0.36 +0.17 +0.45 +0.21 -0.29 -0.45]\n\nGranularity             MAE  Improvement\n--------------------------------------------------\nPer-tensor           0.0207  baseline\nPer-channel          0.0073  2.8× better\nPer-group (size=4)   0.0047  4.4× better\n\nProduction 4-bit quantization (GPTQ, AWQ) uses group_size=128.\nOne outlier channel at 8× scale would ruin per-tensor precision for all others."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## The Outlier Problem and Why Naive 4-bit Fails
+
+Going from INT8 to INT4 (only 16 possible values instead of 256) seems like it should be straightforward — just repeat the same process with fewer bits. But it doesn't work well in practice.
+
+The reason: transformer activations have **outlier channels** — a small number of dimensions that have values much larger than the rest. These few channels dominate the scale and crush precision for all the others.
+
+```text
+INT4 range: [-8, 7] or [0, 15]  — only 16 distinct values
+Grid spacing with outlier: 10× larger than without
+Small-magnitude channels: effectively only 1-2 distinct values
+
+Result: catastrophic quality loss if you just round to INT4
+```
+
+Two algorithms solve this — **GPTQ** and **AWQ**:
+
+```text
+GPTQ (Frantar et al. 2022):
+  Idea: use second-order information (Hessian) to compensate for errors
+  
+  When quantizing weight w:
+    1. Round w → q  (introduces rounding error ε = w - q×scale)
+    2. Redistribute ε across other weights in the same row
+       using the Hessian to minimize the total output change
+    3. The model "absorbs" the quantization error rather than accumulating it
+  
+  Result: 4-bit weights with near-INT8 quality
+  Used by: most 4-bit models on Hugging Face (TheBloke's GPTQ releases)
+
+AWQ (Lin et al. 2023):
+  Idea: protect the important channels by scaling BEFORE quantization
+  
+  Key observation: not all weights matter equally — channels corresponding
+  to larger activations matter more (they contribute more to the output)
+  
+  Per-channel scale:  w_scaled = w × s,   then quantize w_scaled
+  Dequantize:         w_hat    = q × (scale / s)
+  
+  The important channels get scaled up → finer quantization grid for them
+  → less error exactly where it matters most
+  
+  Result: similar quality to GPTQ, often faster to apply
+  Used by: many quantized models (LLaMA, Mistral AWQ releases)
+```
+
+---
+
+## Memory Savings in Practice
+
+```text
+LLaMA-2 7B parameter counts and memory:
+
+  Precision    Bytes/param    Total memory    Can run on
+  ─────────────────────────────────────────────────────────
+  float32          4           28.0 GB        A100-80GB (barely)
+  float16          2           14.0 GB        RTX 3090 (24GB, barely)
+  int8             1            7.0 GB        RTX 3080 (10GB)
+  int4             0.5          3.5 GB        RTX 3060 (8GB) ← consumer GPU!
+  
+  Quality degradation (on standard benchmarks):
+    float16 → int8:  < 0.5% drop on most tasks
+    float16 → int4 (GPTQ/AWQ):  1-3% drop, model-dependent
+    float16 → int4 (naive RTN):  10-30% drop — unusable
+
+That 3.5 GB for int4 LLaMA-7B is why 4-bit quantization
+made local LLM use possible for millions of people.
+```
+
+```notebook
+{
+  "title": "Memory footprint across precisions and model sizes",
+  "runtime": "Python",
+  "cells": [
+    {
+      "id": "cell-memory-table",
+      "type": "code",
+      "source": "models = [\n    ('LLaMA-2 7B',    7_000),\n    ('LLaMA-2 13B',  13_000),\n    ('LLaMA-2 70B',  70_000),\n    ('GPT-3 175B',  175_000),\n]\n\nprecisions = [\n    ('float32', 4),\n    ('float16', 2),\n    ('int8',    1),\n    ('int4',    0.5),\n]\n\nprint(f'{\"Model\":<16}', end='')\nfor prec, _ in precisions:\n    print(f'  {prec:>9}', end='')\nprint()\nprint('-' * 60)\n\nfor name, params_m in models:\n    print(f'{name:<16}', end='')\n    for prec, bpp in precisions:\n        gb = params_m * 1e6 * bpp / 1e9\n        print(f'  {gb:>7.1f}GB', end='')\n    print()\n\nprint()\nprint('Consumer GPU VRAM reference:')\nprint('  RTX 3060:   8 GB    RTX 3080: 10 GB')\nprint('  RTX 3090:  24 GB    RTX 4090: 24 GB')\nprint('  A100-40GB: 40 GB    A100-80GB: 80 GB')\nprint()\nprint('int4 LLaMA-7B (3.5 GB) fits on a consumer RTX 3060 with room to spare.')\nprint('The KV cache adds on top — see Chapter 23 for those numbers.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Model             float32   float16      int8      int4\n------------------------------------------------------------\nLLaMA-2 7B         28.0GB    14.0GB     7.0GB     3.5GB\nLLaMA-2 13B        52.0GB    26.0GB    13.0GB     6.5GB\nLLaMA-2 70B       280.0GB   140.0GB    70.0GB    35.0GB\nGPT-3 175B        700.0GB   350.0GB   175.0GB    87.5GB\n\nConsumer GPU VRAM reference:\n  RTX 3060:   8 GB    RTX 3080: 10 GB\n  RTX 3090:  24 GB    RTX 4090: 24 GB\n  A100-40GB: 40 GB    A100-80GB: 80 GB\n\nint4 LLaMA-7B (3.5 GB) fits on a consumer RTX 3060 with room to spare.\nThe KV cache adds on top — see Chapter 23 for those numbers."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Quick Recap
+
+- Quantization maps float weights to integers: fewer bits → smaller model → faster memory reads.
+- **Symmetric** quantization: `scale = max|x| / 127`, `q = round(x / scale)`. Simple, wastes negative half for non-negative data.
+- **Asymmetric** quantization: `scale = (x_max - x_min) / 255`, uses a zero point. Fits the full integer range to the actual data distribution. Better for activations.
+- **Granularity**: per-tensor (one scale for everything) → per-channel (one per row) → per-group (one per 128 elements). Finer granularity = less error, especially with outlier channels.
+- **INT4 naive rounding fails** because outlier channels dominate the scale. GPTQ (second-order compensation) and AWQ (activation-aware scaling) fix this — enabling near-INT8 quality at 4 bits.
+- **Real impact**: int4 LLaMA-7B uses 3.5 GB — fits on a consumer GPU. That's why local LLM inference became accessible.

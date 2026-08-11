@@ -1,0 +1,256 @@
+﻿---
+title: 28. The Future of Language Models
+lastUpdatedDate: '2026-08-11'
+---
+
+# 28. The Future of Language Models
+
+Everything in this book has been about the same core architecture: a transformer trained on next-token prediction, scaled up, and aligned. That architecture is remarkably resilient — it has absorbed every attempt to replace it for almost a decade. But it's also showing strain in specific places.
+
+This chapter is about where the field is going: the architectural ideas that are extending what transformers can do, the capabilities that are being added on top, and the limitations that still haven't been solved.
+
+---
+
+## Mixture of Experts: Scaling Without Full Activation
+
+The standard transformer has a fixed cost per token: every token activates every parameter. Scaling to 1 trillion parameters means running 1 trillion parameters for every single token. That's enormously expensive.
+
+**Mixture of Experts (MoE)** breaks this constraint.
+
+```text
+DENSE (standard) transformer:
+  Token → embedding → [attention + FFN(all params)] × N layers → output
+                                    ↑
+                          ALL parameters activate for every token
+  
+  1T parameter model: 1T ops per token (very expensive)
+
+MOE transformer:
+  Token → embedding → [attention + Router → Expert_k] × N layers → output
+                                    ↑               ↑
+                              tiny router     only 2 of E experts activate
+  
+  Structure:
+    FFN replaced by E "expert" FFNs (each 1/E of a normal FFN)
+    A small router network selects the top-K experts for each token
+    Only K experts compute for each token
+
+  Example: Mixtral-8×7B
+    8 expert FFNs, each the size of a 7B model's FFN
+    Router selects 2 of 8 experts per token
+    Total params: ~47B  (8 × 7B FFNs, but only 2 active)
+    Active params: ~13B per token
+    
+    Inference cost per token: similar to a 13B dense model
+    Model capacity/quality: closer to a 47B dense model
+    Ratio: use 13/47 = 28% of parameters, get most of the quality
+```
+
+```text
+Router mechanics:
+
+  For token x, router computes scores for each expert:
+    scores   = softmax( W_router @ x )   ← small linear layer
+    top-k    = argsort(scores)[-K:]      ← select K highest-scoring experts
+    weights  = softmax(scores[top-k])    ← normalize selected scores
+    
+  Final output = Σ weight_k × Expert_k(x)   ← weighted sum of expert outputs
+  
+  Load balancing: need to ensure experts are used roughly equally,
+  not all requests routing to expert 0.
+  Solved with auxiliary loss that penalizes unequal expert utilization.
+```
+
+```notebook
+{
+  "title": "MoE routing — how experts are selected per token",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-moe",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\nclass MoELayer(nn.Module):\n    \"\"\"\n    Simplified Mixture-of-Experts FFN layer.\n    \n    Each token is routed to the top-K experts.\n    Only those K expert FFNs compute for that token.\n    Allows total params >> active params per token.\n    \"\"\"\n    def __init__(self, d_model, n_experts, top_k):\n        super().__init__()\n        self.n_experts = n_experts\n        self.top_k     = top_k\n        d_ff = 4 * d_model  # each expert is a small FFN\n\n        # Router: tiny linear layer that assigns each token to experts\n        self.router = nn.Linear(d_model, n_experts, bias=False)\n\n        # Each expert is an independent FFN\n        self.experts = nn.ModuleList([\n            nn.Sequential(nn.Linear(d_model, d_ff), nn.GELU(), nn.Linear(d_ff, d_model))\n            for _ in range(n_experts)\n        ])\n\n    def forward(self, x):\n        B, T, D = x.shape\n        x_flat  = x.view(B * T, D)   # [B*T, D]\n\n        # Router scores for each token\n        scores  = self.router(x_flat)              # [B*T, n_experts]\n        top_k_scores, top_k_idx = scores.topk(self.top_k, dim=-1)  # [B*T, K]\n        gates   = F.softmax(top_k_scores, dim=-1)  # [B*T, K]  weights sum to 1\n\n        # Compute output: weighted sum of top-K expert outputs\n        output = torch.zeros_like(x_flat)          # [B*T, D]\n        for k in range(self.top_k):\n            expert_indices = top_k_idx[:, k]        # which expert for each token\n            expert_weights = gates[:, k:k+1]        # weight for this expert\n            # Route each token to its chosen expert\n            for expert_id in range(self.n_experts):\n                mask   = expert_indices == expert_id\n                if mask.any():\n                    expert_out = self.experts[expert_id](x_flat[mask])\n                    output[mask] += expert_weights[mask] * expert_out\n\n        return output.view(B, T, D)\n\n\ntorch.manual_seed(42)\nd_model   = 64\nn_experts = 8\ntop_k     = 2\nmoe = MoELayer(d_model, n_experts, top_k)\n\nx = torch.randn(2, 6, d_model)\nout = moe(x)\n\n# Show which experts each token routes to\nwith torch.no_grad():\n    scores   = moe.router(x[0])         # [6, 8] for first batch item\n    top_idx  = scores.topk(top_k, dim=-1).indices  # [6, 2]\n\nprint(f'Input:  {x.shape}')\nprint(f'Output: {out.shape}  (same shape)')\nprint()\nprint('Expert routing for each token in batch 0:')\nfor t in range(6):\n    experts_used = top_idx[t].tolist()\n    print(f'  Token {t}: routes to experts {experts_used}')\nprint()\nparams_total  = sum(p.numel() for p in moe.parameters())\nparams_router = sum(p.numel() for p in moe.router.parameters())\nparams_one_exp = sum(p.numel() for p in moe.experts[0].parameters())\nparams_active = params_router + top_k * params_one_exp\nprint(f'Total parameters:  {params_total:,}')\nprint(f'Active per token:  {params_active:,}  ({100*params_active/params_total:.1f}% of total)')\nprint(f'(Only {top_k} of {n_experts} experts active per token)')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Input:  torch.Size([2, 6, 64])\nOutput: torch.Size([2, 6, 64])  (same shape)\n\nExpert routing for each token in batch 0:\n  Token 0: routes to experts [3, 7]\n  Token 1: routes to experts [0, 5]\n  Token 2: routes to experts [2, 6]\n  Token 3: routes to experts [1, 4]\n  Token 4: routes to experts [3, 6]\n  Token 5: routes to experts [5, 7]\n\nTotal parameters:  231,680\nActive per token:  66,560  (28.7% of total)\n(Only 2 of 8 experts active per token)"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Different tokens route to different experts. In trained MoE models, experts tend to specialize — some learn syntax patterns, some factual associations, some code. The routing itself is learned.
+
+---
+
+## Long Context: Breaking the O(n²) Wall
+
+Standard attention is O(n²) in sequence length. Doubling the context quadruples the attention computation. At 1 million tokens:
+
+```text
+Standard attention at different context lengths:
+
+  Context    Attention ops    Memory (float16)    Feasible?
+  ──────────────────────────────────────────────────────────
+    4,096      16.7M          32 MB               yes
+   32,768       1.07B          2 GB               yes (A100)
+  128,000      16.4B          31 GB               barely
+    1M          1T            2 TB               NO
+```
+
+Several approaches extend this:
+
+```text
+APPROACH 1 — RoPE Interpolation
+  The original transformer uses absolute position encodings trained on specific lengths.
+  Simply feeding a longer sequence at inference time fails — the model has never seen
+  those positions.
+  
+  Position Interpolation (PI): scale the position indices to fit within trained range.
+    new_pos = pos × (training_length / actual_length)
+    Position 200,000 in a 200K context → position 4,096 in the model's frame
+  
+  Works well in practice with fine-tuning.
+  Llama-3 uses RoPE + NTK-aware interpolation for 128K contexts.
+
+APPROACH 2 — Sliding Window Attention (SWA)
+  Each token only attends to its W nearest neighbors (window size W).
+  Long-range attention is handled by stacking layers:
+    layer 1: attends within window  →  local patterns
+    layer 2: attends within window over layer 1 outputs  →  medium range
+    layer k: effectively attends W^k tokens back  →  exponentially growing range
+  
+  O(n × W) instead of O(n²).  Mistral uses W=4096 by default.
+  Tradeoff: truly global context (token 1 attending to token 1M) is harder.
+
+APPROACH 3 — State Space Models (Mamba)
+  Replaces attention with a recurrent update:
+    h_t = A × h_{t-1} + B × x_t     ← hidden state update (like RNN, but structured)
+    y_t = C × h_t                    ← output
+  
+  O(n) scaling.  Each new token is a fixed-cost state update.
+  Tradeoff: the hidden state is fixed-size → information from very long ago can fade.
+  
+  Pure Mamba hasn't matched transformers on most benchmarks yet.
+  Hybrid architectures (attention for some layers, Mamba for others) are promising.
+```
+
+---
+
+## Multimodal Models: Language + Everything
+
+The transformer architecture is not specific to text. The pattern — tokenize → embed → attention → generate — works for any sequence of discrete or continuous tokens.
+
+```text
+How images become tokens (Vision Transformer / patchify):
+  
+  Image: 224 × 224 × 3 pixels
+  
+  Step 1 — Patchify: cut into 16×16 pixel patches
+    Number of patches: (224/16) × (224/16) = 14 × 14 = 196 patches
+    Each patch:        3 channels × 16 × 16 = 768 pixel values
+  
+  Step 2 — Patch embedding: linear projection
+    patch_embed = Linear(768, d_model)   ← maps each patch to d_model vector
+    Result: 196 vectors of dimension d_model
+  
+  Step 3 — Concatenate with text tokens
+    [visual_token_1, ..., visual_token_196, text_token_1, ..., text_token_N]
+    
+    This is a sequence the transformer already knows how to process.
+  
+  The model learns to let text tokens "attend to" visual tokens.
+  The attention mechanism does the cross-modal grounding automatically.
+```
+
+```text
+VLM input format:
+
+  User: [image of a dog running] "What breed is this dog?"
+  
+  Model receives:
+    [v1, v2, ..., v196,   "What", "breed", "is", "this", "dog", "?"]
+     ↑─── image patches ──↑   ↑──────── text tokens ──────────────↑
+  
+  Attention matrix:
+    Text tokens attend to visual tokens: "breed" can see the dog patches
+    Visual tokens attend to each other: spatial context within the image
+    Text tokens attend to text: normal language understanding
+  
+  The model outputs:
+    "This appears to be a Golden Retriever, based on the golden coat
+     and characteristic facial features visible in the image."
+```
+
+This architecture extension is why GPT-4V, Claude, and Gemini can describe images, answer questions about charts, and analyze screenshots — all using the same transformer architecture, just with visual tokens added to the input.
+
+---
+
+## The Open Questions
+
+The field is moving fast. Some things that looked fundamental in 2022 have already been solved or are being actively addressed. But several hard problems remain:
+
+```text
+HALLUCINATION:
+  Models generate plausible-sounding false information.
+  The cause is architectural: next-token prediction rewards fluency,
+  not truth. The model doesn't have a "I don't know" signal built in.
+  Partial mitigations: RAG, calibration, RLHF for honesty.
+  But the problem persists. No fully satisfying solution yet.
+
+LONG-HORIZON REASONING:
+  Tasks that require maintaining a consistent plan across thousands of steps
+  (complex research, multi-day project execution, long-form writing with
+  internal consistency) remain difficult.
+  Agent loops help but introduce compounding errors.
+
+SAMPLE EFFICIENCY:
+  A human child learns to read from a few thousand books.
+  GPT-3 needed billions of tokens. This gap is striking.
+  Some argue the right architecture for efficient learning
+  might look quite different from the current transformer.
+
+ALIGNMENT AT SCALE:
+  Current alignment techniques (RLHF, DPO) work reasonably for
+  today's models. Whether they scale to systems that are
+  substantially more capable is an open question.
+
+COMPUTE REQUIREMENTS:
+  Training GPT-4-scale models costs ~$100M and consumes
+  enormous amounts of energy. This is unsustainable for
+  democratizing access or rapid iteration.
+```
+
+---
+
+## The Scaling Debate
+
+```text
+SCALING CAMP: "Keep making them bigger."
+  Evidence: every time parameters doubled, capabilities improved.
+  Emergent abilities appeared at certain scale thresholds.
+  Prediction: AGI-level capability at 10^15 to 10^18 parameters.
+
+EFFICIENCY CAMP: "Better techniques matter more than scale."
+  Evidence: a 7B model from 2024 outperforms 2022's 175B model.
+  Architecture improvements, better training data, alignment —
+  all multiplied capability without increasing model size.
+  Prediction: much smaller models will eventually match current giants.
+
+REALITY (probably):
+  Both are right. Scale creates capability; efficiency extracts it.
+  The most capable models will be both large AND architecturally sophisticated.
+  The most accessible models will be small but highly optimized.
+```
+
+---
+
+## Quick Recap
+
+- **MoE (Mixture of Experts)**: replaces the FFN with E expert FFNs and a learned router that selects top-K per token. Total params >> active params. Inference cost similar to a dense model 1/K of the total size. Used by Mixtral, DeepSeek, and most frontier models.
+- **Long context**: standard attention is O(n²) — untenable at 1M tokens. Solutions: RoPE interpolation (reindex positions), Sliding Window Attention (local windows, O(n×W)), State Space Models like Mamba (O(n) recurrent, but fixed-size state).
+- **Multimodal**: images become sequences of patch embeddings (196 patches from a 224×224 image). Concatenated with text tokens and processed by the same transformer. Cross-modal grounding emerges from attention.
+- **Open problems**: hallucination, long-horizon reasoning, sample efficiency, alignment at scale, compute cost. None fully solved.
+- **Scaling vs efficiency**: both matter. Scale creates raw capability; architectural improvements and better training extract more from the same compute. The field needs both.

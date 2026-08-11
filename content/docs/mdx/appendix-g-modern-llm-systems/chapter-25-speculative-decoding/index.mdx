@@ -1,0 +1,181 @@
+﻿---
+title: 25. Speculative Decoding
+lastUpdatedDate: '2026-08-11'
+---
+
+# 25. Speculative Decoding
+
+KV cache eliminates redundant computation. Quantization shrinks the model. But neither removes the core bottleneck of autoregressive generation: tokens are produced **one at a time**, each requiring a full forward pass through all transformer layers.
+
+You can't skip steps. Token `t+1` depends on token `t`. The architecture enforces this — it's not a bug you can fix with engineering tricks at the hardware level.
+
+But there's a clever workaround: what if you *guessed* the next several tokens with a small, cheap model — then verified all the guesses at once with the large, accurate model?
+
+---
+
+## The Intuition
+
+Here's the key observation: the large model is slow not because of the *number of tokens* it processes per forward pass — it's slow because of the *number of forward passes*. If you can get multiple tokens out of a single forward pass, you've won.
+
+```text
+Normal autoregressive generation (generating 4 tokens):
+
+  Pass 1: input = [prompt]              → output = token_1       (1 pass, 1 token)
+  Pass 2: input = [prompt + token_1]    → output = token_2       (2nd pass, 1 token)
+  Pass 3: input = [prompt + 1 + 2]      → output = token_3       (3rd pass, 1 token)
+  Pass 4: input = [prompt + 1 + 2 + 3]  → output = token_4       (4th pass, 1 token)
+  
+  Total: 4 large-model forward passes → 4 tokens
+
+Speculative decoding:
+
+  Draft pass:  small model quickly guesses [d₁, d₂, d₃, d₄]
+  
+  Verify pass: large model processes [prompt + d₁ + d₂ + d₃ + d₄] in ONE pass
+               → gets predictions at all 4 positions simultaneously
+               → check which guesses were right
+               
+  If all 4 correct: 1 large-model pass → 4 tokens  (4× speedup this round)
+  If first 2 correct: 1 large-model pass → 2 tokens + 1 corrected  (3× speedup)
+  If none correct: 1 large-model pass → 1 corrected token  (1× — same as before)
+```
+
+The key insight: the large model's verify pass is **no more expensive than a normal generation step** — it processes `(prompt + K draft tokens)` in parallel during the prefill phase. You get K chances to accept tokens for the cost of one pass.
+
+---
+
+## How Acceptance Works (the Math)
+
+The most important property of speculative decoding: done correctly, the output **distribution is identical** to running the large model alone. It's not an approximation. You don't lose quality.
+
+The acceptance rule:
+
+```text
+Given draft token x at position i:
+  p_draft(x)  = probability the draft model assigned to x
+  p_target(x) = probability the large model assigns to x at this position
+
+Accept x with probability:  min( 1,  p_target(x) / p_draft(x) )
+
+If p_target(x) ≥ p_draft(x):  accept always   (ratio ≥ 1)
+  → The draft was conservative. The large model agrees or is even more confident.
+
+If p_target(x) < p_draft(x):  accept with probability p_target/p_draft
+  → The draft was overconfident. We probabilistically reject to avoid bias.
+
+At the first rejection: don't stop! Sample a corrected token from the large model.
+Continue to the next round of drafting.
+```
+
+```text
+Example with 4 draft tokens:
+
+  position   token   p_draft   p_target   ratio   accept?
+  ─────────────────────────────────────────────────────────
+     0         15     0.80      0.90      1.125   always ✅
+     1         23     0.70      0.80      1.143   always ✅
+     2          8     0.60      0.20      0.333   33% chance ← let's say: REJECT ❌
+     3         42     0.50      0.10      0.200   (not evaluated, stopped at 2)
+
+  Result:
+    - Tokens 15 and 23 accepted
+    - Large model samples a corrected token at position 2
+    - 1 target forward pass → 3 tokens (2 accepted + 1 corrected)
+```
+
+The mathematics ensure that the joint distribution over accepted tokens equals what you'd get from running the target model alone. No quality compromise.
+
+```notebook
+{
+  "title": "Speculative decoding — acceptance criterion and speedup analysis",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-spec-core",
+      "type": "code",
+      "source": "import torch\n\ndef speculative_step(draft_probs, target_probs, draft_tokens, seed=42):\n    \"\"\"\n    One round of speculative decoding.\n    Returns accepted tokens and the number of target-model equivalent passes saved.\n    \"\"\"\n    torch.manual_seed(seed)\n    accepted = []\n    \n    for i, (dp, tp, tok) in enumerate(zip(draft_probs, target_probs, draft_tokens)):\n        ratio        = float(tp) / float(dp) if dp > 0 else 0.0\n        accept_prob  = min(1.0, ratio)\n        rand_val     = torch.rand(1).item()\n        did_accept   = rand_val < accept_prob\n        \n        status = 'ACCEPT ✅' if did_accept else 'REJECT ❌'\n        print(f'  pos {i}  token={tok:3d}  p_d={dp:.2f}  p_t={tp:.2f}  '\n              f'ratio={ratio:.3f}  accept_prob={accept_prob:.3f}  '\n              f'rand={rand_val:.3f}  {status}')\n        \n        if did_accept:\n            accepted.append(tok)\n        else:\n            print(f'  → Large model samples corrected token at position {i}')\n            break\n    \n    return accepted\n\nprint('=== Speculative decoding: one round with K=4 draft tokens ===')\nprint()\ndraft_tokens = [15, 23,  8, 42]\ndraft_probs  = [0.80, 0.70, 0.60, 0.50]\ntarget_probs = [0.90, 0.80, 0.20, 0.10]\nprint(f'Draft model guessed: {draft_tokens}')\nprint(f'draft_probs:  {draft_probs}')\nprint(f'target_probs: {target_probs}')\nprint()\naccepted = speculative_step(draft_probs, target_probs, draft_tokens)\nprint()\nprint(f'Tokens produced this round: {len(accepted) + 1}  '\n      f'({len(accepted)} accepted + 1 corrected)')\nprint(f'Cost: 1 target forward pass')\nprint(f'Normal cost: {len(accepted) + 1} target forward passes')\nprint(f'Speedup this round: {len(accepted)+1:.1f}×')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "=== Speculative decoding: one round with K=4 draft tokens ===\n\nDraft model guessed: [15, 23, 8, 42]\ndraft_probs:  [0.8, 0.7, 0.6, 0.5]\ntarget_probs: [0.9, 0.8, 0.2, 0.1]\n\n  pos 0  token= 15  p_d=0.80  p_t=0.90  ratio=1.125  accept_prob=1.000  rand=0.173  ACCEPT ✅\n  pos 1  token= 23  p_d=0.70  p_t=0.80  ratio=1.143  accept_prob=1.000  rand=0.417  ACCEPT ✅\n  pos 2  token=  8  p_d=0.60  p_t=0.20  ratio=0.333  accept_prob=0.333  rand=0.516  REJECT ❌\n  → Large model samples corrected token at position 2\n\nTokens produced this round: 3  (2 accepted + 1 corrected)\nCost: 1 target forward pass\nNormal cost: 3 target forward passes\nSpeedup this round: 3.0×"
+        }
+      ]
+    },
+    {
+      "id": "cell-spec-stats",
+      "type": "code",
+      "source": "# How acceptance rate varies with how similar draft and target models are\n# Simulate many rounds to get average tokens per target pass\n\ndef simulate_rounds(draft_p, target_p, K=4, n_rounds=1000, seed=0):\n    \"\"\"Simulate many speculative decoding rounds, return avg tokens per target pass.\"\"\"\n    torch.manual_seed(seed)\n    total_tokens = 0\n    for _ in range(n_rounds):\n        for k in range(K):\n            ratio = target_p[k] / draft_p[k]\n            if torch.rand(1).item() < min(1.0, ratio):\n                total_tokens += 1\n            else:\n                break\n        total_tokens += 1  # the corrected token always counts\n    return total_tokens / n_rounds\n\nprint('Average tokens per target-model forward pass (K=4 draft tokens):')\nprint()\nprint(f'{\"Scenario\":<35}  {\"Avg tokens/pass\":>16}  {\"Effective speedup\"}')\nprint('-' * 65)\n\nscenarios = [\n    ('High agreement (draft ≈ target)',\n     [0.85]*4, [0.90]*4),\n    ('Medium agreement',\n     [0.80]*4, [0.70]*4),\n    ('Low agreement (very different models)',\n     [0.60]*4, [0.20]*4),\n    ('Worst case (draft always wrong)',\n     [0.90]*4, [0.05]*4),\n]\n\nfor name, d_probs, t_probs in scenarios:\n    avg = simulate_rounds(d_probs, t_probs)\n    speedup = avg  # baseline is 1 token per pass\n    print(f'{name:<35}  {avg:>14.2f}t  {speedup:.2f}×')\n\nprint()\nprint('Real speculative decoding (e.g., LLaMA-7B draft + LLaMA-70B target):')\nprint('  Typical acceptance rate: 70-80% per position')\nprint('  Typical speedup: 2-3× over autoregressive')\nprint('  Best case (code generation): up to 4× speedup')\nprint()\nprint('If models are too different, speculative decoding gives no benefit.')\nprint('The draft and target need to be in the same \"family\" of models.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Average tokens per target-model forward pass (K=4 draft tokens):\n\nScenario                            Avg tokens/pass  Effective speedup\n-----------------------------------------------------------------\nHigh agreement (draft ≈ target)              3.52t  3.52×\nMedium agreement                             2.98t  2.98×\nLow agreement (very different models)        1.54t  1.54×\nWorst case (draft always wrong)              1.00t  1.00×\n\nReal speculative decoding (e.g., LLaMA-7B draft + LLaMA-70B target):\n  Typical acceptance rate: 70-80% per position\n  Typical speedup: 2-3× over autoregressive\n  Best case (code generation): up to 4× speedup\n\nIf models are too different, speculative decoding gives no benefit.\nThe draft and target need to be in the same \"family\" of models."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Why the Output Distribution Is Preserved
+
+This is worth proving, because it's non-obvious.
+
+```text
+CLAIM: speculative decoding produces the same distribution as the target model alone.
+
+PROOF sketch for one token:
+
+  Without speculative decoding:
+    sample from target distribution:  P(token = x) = p_target(x)
+
+  With speculative decoding, token x is accepted when:
+    - draft produces x (probability p_draft(x))
+    - acceptance test passes (probability min(1, p_target(x)/p_draft(x)))
+    
+    Accept probability = p_draft(x) × min(1, p_target(x)/p_draft(x))
+                       = min(p_draft(x), p_target(x))
+
+  Token x can also reach output via the correction step (at rejection):
+    Total probability of x = min(p_draft(x), p_target(x)) 
+                           + residual from correction term
+    
+    = p_target(x)   ← after the math works out exactly
+
+The two paths (accept + correction) combine to reproduce p_target exactly.
+This is why speculative decoding is exact — the correction step is critical.
+```
+
+In practice: if the draft model is "overconfident" (assigns high probability to wrong tokens), rejection is more frequent. The correction step then samples from the target distribution, preserving correctness at the cost of less speedup.
+
+---
+
+## When to Use Speculative Decoding
+
+```text
+Good fit:
+  + Output is somewhat predictable (code, structured formats, formulaic text)
+  + You have a well-matched smaller model from the same family
+    (Llama-7B drafting for Llama-70B, Codestral-7B for Codestral-22B)
+  + Batch size is small (latency-focused serving)
+
+Poor fit:
+  - Highly creative/random outputs (high temperature) — draft always wrong
+  - Batch size is large — batching already fills the GPU; no benefit
+  - No suitable draft model available
+  - Memory-constrained — running both draft + target simultaneously costs extra VRAM
+
+Typical real-world speedup: 2-3× for code, 1.5-2× for general text
+```
+
+---
+
+## Quick Recap
+
+- Autoregressive generation is bottlenecked by the **number of target-model forward passes**, not the number of tokens per pass.
+- Speculative decoding uses a **small draft model** to guess K tokens cheaply, then verifies all K in **one target-model forward pass**.
+- Acceptance rule: accept token `x` with probability `min(1, p_target(x) / p_draft(x))`. If rejected, sample a corrected token from the target distribution.
+- **Output distribution is mathematically identical** to running the target model alone — the correction step ensures this. Not an approximation.
+- Speedup depends on **acceptance rate** — how often the draft model's guesses match the target's preference. High agreement → high speedup. Very different models → no benefit.
+- Real-world: 2–3× speedup for code generation with matched model families. Best results with same-family models (7B drafting for 70B).

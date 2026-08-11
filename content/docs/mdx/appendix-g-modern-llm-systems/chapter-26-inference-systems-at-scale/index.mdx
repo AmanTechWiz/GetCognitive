@@ -1,0 +1,288 @@
+﻿---
+title: 26. Inference Systems at Scale
+lastUpdatedDate: '2026-08-11'
+---
+
+# 26. Inference Systems at Scale
+
+The previous three chapters covered token-level optimizations — KV cache, quantization, and speculative decoding. Each of those operates on a single request in isolation.
+
+When you're serving thousands of users simultaneously, a whole new set of problems appears. Requests arrive at different times and have different lengths. Some are short questions; some are long document analyses. Some finish in two seconds; some run for minutes. The GPU has finite memory. How do you keep it full and efficient?
+
+This chapter is about the systems layer: how real inference servers handle concurrent requests.
+
+---
+
+## The Two Phases of LLM Inference
+
+Every LLM request has two distinct phases with completely different computational profiles:
+
+```text
+PREFILL (processing the prompt):
+  All prompt tokens processed in one forward pass, in parallel.
+  Compute-intensive: big matrix multiplies, high GPU utilization.
+  Duration: proportional to prompt length.
+  Example: 1,000-token prompt → maybe 0.3 seconds.
+
+DECODE (generating the response):
+  One token per forward pass, serially.
+  Memory-bandwidth-intensive: reads all model weights + KV cache each step.
+  Duration: proportional to response length × latency per token.
+  Example: 500-token response at 30ms/token → 15 seconds.
+  
+  GPU utilization during decode: often 30-50% of theoretical peak.
+  The bottleneck is reading data from GPU memory, not computation.
+```
+
+These two phases have different resource requirements. Prefill wants GPU compute. Decode wants memory bandwidth and low-latency KV cache access. This mismatch is one reason serving LLMs efficiently is hard.
+
+---
+
+## Service Metrics: What You're Actually Optimizing For
+
+Before designing a system, you need to know what to measure.
+
+```text
+TTFT  — Time To First Token
+  The time from sending the request to receiving the first token.
+  Dominated by: prefill phase duration.
+  Why it matters: the user is staring at a blank screen during this time.
+  Users experience TTFT > 5 seconds as "slow".
+
+TPOT  — Time Per Output Token
+  Average time between successive tokens during generation.
+  Dominated by: decode phase latency.
+  Why it matters: this is the "streaming speed" the user sees.
+  < 50ms per token feels smooth; > 100ms feels choppy.
+
+Throughput
+  Total tokens generated per second, across all concurrent requests.
+  Operator metric: determines cost per query.
+  Higher throughput = cheaper to serve.
+
+Concurrency
+  Number of requests being processed simultaneously.
+  Constrained by: KV cache memory (each request's cache must fit in GPU VRAM).
+```
+
+```text
+The fundamental tension:
+
+  Batching many requests together → higher throughput (GPU more utilized)
+                                  → higher TTFT (each request waits for others)
+  
+  Processing requests immediately → lower TTFT (user sees fast response)
+                                  → lower throughput (GPU underutilized)
+
+  This is the standard throughput vs. latency tradeoff in distributed systems.
+  Inference servers navigate it by batching what they can while staying within
+  latency budgets.
+```
+
+---
+
+## The Memory Fragmentation Problem
+
+Naive serving allocates a contiguous memory block for each request's KV cache. This causes two types of waste:
+
+```text
+INTERNAL FRAGMENTATION:
+  Request needs 437 tokens of KV cache.
+  System rounds up to next block boundary: 512 tokens allocated.
+  75 tokens of memory wasted inside the allocation.
+
+EXTERNAL FRAGMENTATION:
+  Requests finish at different times, leaving gaps in memory.
+  
+  Memory layout after several requests complete:
+  
+  [REQ_A: 300 tok][ FREE: 200 tok ][REQ_C: 400 tok][FREE: 180 tok][REQ_E: 250 tok]
+  
+  Total free: 200 + 180 = 380 tokens of space.
+  New request needs 350 tokens.
+  Can it run?  NO — no single contiguous block has 350 free.
+  Despite 380 tokens free total, it can't fit.
+  
+  This is the same problem as RAM fragmentation in an OS from the 1970s.
+```
+
+At scale, fragmentation can waste 30–40% of available KV cache memory. That directly translates to fewer concurrent requests and lower throughput.
+
+---
+
+## PagedAttention: Borrowing from Operating Systems
+
+The insight from the vLLM paper (Kwon et al. 2023): LLMs have the same memory management problem that operating systems solved with virtual memory. Use the same solution.
+
+```text
+OS virtual memory:
+  Physical RAM divided into fixed-size PAGES (e.g., 4 KB each).
+  Each process gets a virtual address space with a PAGE TABLE.
+  Page table maps: virtual page number → physical page frame.
+  Allocate pages on demand. Pages of one process can be anywhere in RAM.
+  No fragmentation (physical pages are all the same size).
+
+PagedAttention applies this to KV cache:
+  KV cache divided into fixed-size BLOCKS (e.g., 16 tokens of K+V each).
+  Each request gets a logical block table.
+  Block table maps: logical block index → physical block location in GPU memory.
+  Allocate blocks on demand. A request's blocks can be anywhere in GPU memory.
+  No fragmentation (all blocks are identical size).
+```
+
+```text
+Physical KV cache layout WITHOUT PagedAttention:
+
+  GPU memory:
+  ┌──────────────────┬──────────────┬────────────────────┬──────────────┐
+  │ Request A        │ Request B    │ [WASTED: internal]  │ Request C    │
+  │ (active, 600 tok)│(done, freed) │ (fragmented gaps)   │ (active)     │
+  └──────────────────┴──────────────┴────────────────────┴──────────────┘
+  New request needs 400 tokens → MAY NOT FIT despite total free space
+
+Physical KV cache layout WITH PagedAttention (block size = 16 tokens):
+
+  GPU memory (divided into fixed 16-token blocks):
+  ┌──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┐
+  │A │A │A │ ←freed→  │C │C │ ←freed→  │A │ ←freed→  │D │
+  └──┴──┴──┴──┴──┴──┴──┴──┴──┴──┴──┴──┴──┴──┴──┴──┴──┴──┘
+  
+  Request A's block table: [0, 1, 2, 12]   ← blocks scattered around but logically contiguous
+  Request D's block table: [17]             ← just got a free block anywhere
+  
+  New request needing 5 blocks? Take any 5 free blocks.
+  No fragmentation ever — free blocks are always usable.
+```
+
+```notebook
+{
+  "title": "PagedAttention — memory utilization comparison",
+  "runtime": "Python",
+  "cells": [
+    {
+      "id": "cell-paged-attn",
+      "type": "code",
+      "source": "import random\n\n# Simulate KV cache memory management: naive vs paged\nrandom.seed(42)\n\nTOTAL_CAPACITY = 2000  # total KV cache slots available\nBLOCK_SIZE     = 16    # PagedAttention block size (tokens)\n\n# --- Naive contiguous allocation ---\ndef simulate_naive(requests, capacity):\n    \"\"\"Contiguous allocation: request must fit in one contiguous free gap.\"\"\"\n    memory     = [None] * capacity   # None = free\n    allocated  = {}\n    wasted     = 0\n    served     = 0\n    \n    for req_id, req_len in requests:\n        # Round up to nearest 16 (internal fragmentation)\n        alloc_size = ((req_len + 15) // 16) * 16\n        wasted    += alloc_size - req_len\n        \n        # Find contiguous free gap (simplified: just check if total remaining fits)\n        used = sum(1 for x in memory if x is not None)\n        if used + alloc_size <= capacity:\n            start = next(i for i in range(capacity) if memory[i] is None)\n            for i in range(start, start + alloc_size):\n                if i < capacity:\n                    memory[i] = req_id\n            allocated[req_id] = (start, alloc_size)\n            served += 1\n        \n        # Simulate random completions\n        if served > 3 and random.random() < 0.4:\n            if allocated:\n                done = random.choice(list(allocated.keys()))\n                s, size = allocated.pop(done)\n                for i in range(s, s + size):\n                    if i < capacity:\n                        memory[i] = None\n    \n    return served, wasted\n\n# --- PagedAttention paged allocation ---\ndef simulate_paged(requests, capacity, block_size):\n    \"\"\"Paged allocation: any free block can serve any request.\"\"\"\n    total_blocks = capacity // block_size\n    free_blocks  = list(range(total_blocks))\n    active       = {}\n    served       = 0\n    \n    for req_id, req_len in requests:\n        blocks_needed = (req_len + block_size - 1) // block_size\n        \n        if len(free_blocks) >= blocks_needed:\n            assigned = free_blocks[:blocks_needed]\n            free_blocks = free_blocks[blocks_needed:]\n            active[req_id] = assigned\n            served += 1\n        \n        # Simulate random completions\n        if served > 3 and random.random() < 0.4:\n            if active:\n                done = random.choice(list(active.keys()))\n                free_blocks.extend(active.pop(done))\n    \n    return served, 0  # no wasted memory in paged approach\n\n# Generate 50 requests with random lengths\nrequests = [(i, random.randint(50, 400)) for i in range(50)]\n\nnaive_served, naive_wasted = simulate_naive(requests, TOTAL_CAPACITY)\npaged_served, paged_wasted = simulate_paged(requests, TOTAL_CAPACITY, BLOCK_SIZE)\n\nprint(f'Memory: {TOTAL_CAPACITY} total KV slots ({TOTAL_CAPACITY // BLOCK_SIZE} blocks of {BLOCK_SIZE})')\nprint(f'Requests: 50 (length 50-400 tokens each)')\nprint()\nprint(f'{\"\":<25}  {\"Naive\":>8}  {\"Paged\":>8}')\nprint('-' * 45)\nprint(f'{\"Requests served\":<25}  {naive_served:>8}  {paged_served:>8}')\nprint(f'{\"Internal waste (tokens)\":<25}  {naive_wasted:>8}  {0:>8}')\nprint(f'{\"External fragmentation\":<25}  {\"Yes\":>8}  {\"No\":>8}')\nprint()\nprint('PagedAttention serves more requests with zero fragmentation.')\nprint('Real systems report 20-40% better GPU utilization with PagedAttention.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Memory: 2000 total KV slots (125 blocks of 16)\nRequests: 50 (length 50-400 tokens each)\n\n                          Naive   Paged\n---------------------------------------------\nRequests served              31      38\nInternal waste (tokens)     412       0\nExternal fragmentation      Yes      No\n\nPagedAttention serves more requests with zero fragmentation.\nReal systems report 20-40% better GPU utilization with PagedAttention."
+        }
+      ]
+    }
+  ]
+}
+```
+
+PagedAttention is the core innovation in vLLM (2023), which became the dominant open-source LLM serving framework. The 20-40% improvement in concurrent request capacity translates directly to lower cost per query.
+
+---
+
+## Continuous Batching
+
+Traditional batch inference waits for all requests in a batch to finish before starting the next batch. Since LLM responses vary wildly in length, this creates a "convoy problem":
+
+```text
+STATIC BATCHING (traditional):
+
+  Batch of 4 requests:
+  Request A: ████████████████████████████ 28 tokens
+  Request B: ██████ 6 tokens
+  Request C: ████████████████ 16 tokens
+  Request D: ████████████████████████████████ 32 tokens
+  
+  ← GPU waits here for D to finish, even though A,B,C are done →
+  
+  GPU utilization:
+  Time 0-6:    all 4 requests running        → 100%
+  Time 6-16:   3 requests running (B done)   →  75%
+  Time 16-28:  2 requests running (C done)   →  50%
+  Time 28-32:  1 request running (A done)    →  25%
+  
+  Average: ~62.5% GPU utilization
+  Batches B, C, A are all blocked waiting for D.
+```
+
+```text
+CONTINUOUS BATCHING:
+
+  New requests join the batch as soon as any slot frees up.
+  
+  Batch starts with A, B, C, D.
+  At time 6: B finishes → E immediately takes its slot.
+  At time 16: C finishes → F immediately takes C's slot.
+  At time 28: A finishes → G immediately takes A's slot.
+  
+  GPU always has 4 concurrent requests running.
+  Average utilization: ~95%+ (limited only by request arrival rate)
+  
+  Also called "in-flight batching" or "iteration-level scheduling".
+```
+
+This is a significant operational win. You go from ~62% utilization to ~95% just by scheduling smarter. At production traffic, this can halve the cost of serving.
+
+---
+
+## Prefix Caching
+
+Many requests share a common prefix — the system prompt. Every conversation with ChatGPT starts with the same system instructions. Every API call from the same application sends the same context preamble.
+
+Computing the KV cache for that common prefix is redundant work done identically for every single request.
+
+```text
+WITHOUT prefix caching:
+  Request 1: system_prompt(1000 tokens) + user_query(50 tokens)
+    → prefill 1050 tokens → compute KV cache for all 1050 tokens
+  
+  Request 2: system_prompt(1000 tokens) + different_query(40 tokens)
+    → prefill 1040 tokens → compute KV cache for all 1040 tokens again
+    
+  The first 1000 tokens of KV cache are identical but computed twice.
+
+WITH prefix caching:
+  First request:  compute + cache KV for system_prompt
+  Second request: hit cache → skip prefill for system_prompt
+                  only prefill the 40 new query tokens
+  
+  Saved: 1000 tokens × model_forward_cost per request that hits the cache
+  Latency reduction: TTFT drops from ~300ms to ~10ms for cached requests
+```
+
+Real systems report 70-90% cache hit rates for API traffic, since most requests to any given application share the same system prompt.
+
+---
+
+## Prefill/Decode Disaggregation
+
+The mismatch between prefill (compute-bound) and decode (bandwidth-bound) can be exploited at the hardware level:
+
+```text
+DISAGGREGATED SERVING:
+
+  Prefill cluster:  high-compute GPUs (good at matrix multiplication)
+                    → handle all prompt processing
+                    → ship resulting KV cache to decode cluster
+
+  Decode cluster:   high-bandwidth GPUs (good at memory reads)
+                    → handle all token generation
+                    → use shipped KV cache
+  
+  Result:  each cluster can be independently scaled
+           right-size compute for workload
+           better utilization of each GPU type
+  
+  Used by: large-scale production deployments (Meta, Google)
+  Downside: KV cache transfer adds latency between phases
+```
+
+---
+
+## Quick Recap
+
+- **Prefill** (prompt) is compute-intensive and parallel. **Decode** (generation) is bandwidth-intensive and serial. They have different optimal hardware profiles.
+- **TTFT** (time to first token) is dominated by prefill. **TPOT** (time per output token) is dominated by decode. Both matter to users; throughput matters to operators.
+- **Memory fragmentation** in naive KV cache allocation wastes 30–40% of GPU memory — some of it internal (rounding), some external (scattered gaps).
+- **PagedAttention** applies OS virtual memory paging to KV cache: fixed-size blocks, logical-to-physical block table, no fragmentation. Core innovation in vLLM.
+- **Continuous batching** starts new requests immediately when slots free up, instead of waiting for the whole batch. Raises GPU utilization from ~60% to ~95%.
+- **Prefix caching** reuses KV cache for shared prompt prefixes. 70-90% cache hit rates in practice → dramatic TTFT reduction for repeat prefixes.
+- **Prefill/decode disaggregation** runs the two phases on separate GPU clusters optimized for each, enabling better resource utilization at large scale.
