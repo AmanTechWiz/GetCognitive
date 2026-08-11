@@ -1,7 +1,17 @@
 import type { ReactNode } from 'react';
+import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/site-header';
 import { ThemeProvider } from '@/components/theme-provider';
 import './globals.css';
+
+export const metadata: Metadata = {
+  title: {
+    default: 'Cognitive — AI Knowledge Base',
+    template: '%s | Cognitive',
+  },
+  description:
+    'Every AI concept, before it becomes mainstream. Community-maintained AI engineering knowledge.',
+};
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
