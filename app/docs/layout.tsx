@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { DocsSidebar } from '@/components/docs/sidebar';
-import { docPages, docGroups, getSearchItems } from '@/content/docs/docs-server';
+import { docNavItems, docGroups, docPages, getSearchItems } from '@/content/docs/docs-server';
 
 export default function DocsLayout({ children }: { children: ReactNode }) {
   const searchItems = getSearchItems(docPages);
@@ -10,7 +10,7 @@ export default function DocsLayout({ children }: { children: ReactNode }) {
       id="nd-docs-layout"
       className="grid min-h-dvh w-full grid-cols-1 overflow-x-clip lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_268px]"
     >
-      <DocsSidebar docs={docPages} groups={docGroups} searchItems={searchItems} />
+      <DocsSidebar docs={docNavItems} groups={docGroups} searchItems={searchItems} />
       {children}
     </div>
   );

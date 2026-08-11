@@ -162,6 +162,22 @@ export const docGroups = [
   ...Array.from(new Set(docPages.map((page) => page.group))).filter((group) => group !== 'Start Here'),
 ];
 
+// Slim navigation-only view — no body content, safe to pass to client components
+export type DocNavItem = {
+  slug: string[];
+  title: string;
+  group: string;
+  parentSlug?: string[];
+  parentTitle?: string;
+  isChapterOverview?: boolean;
+};
+
+export const docNavItems: DocNavItem[] = docPages.map(
+  ({ slug, title, group, parentSlug, parentTitle, isChapterOverview }) => ({
+    slug, title, group, parentSlug, parentTitle, isChapterOverview,
+  }),
+);
+
 function normalizeSearchText(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -179,7 +195,7 @@ export function getSearchItems(docs: DocPage[]): any[] {
     const url = page.slug.length > 0 ? `/docs/${page.slug.join('/')}` : `/docs`;
     const breadcrumbs = [page.group, page.parentTitle].filter(Boolean) as string[];
     const description = page.description ?? page.parentTitle ?? page.group;
-    
+
     const pageItem = {
       id: `page:${page.slug.join('/')}`,
       type: 'page',
@@ -187,12 +203,11 @@ export function getSearchItems(docs: DocPage[]): any[] {
       content: page.title,
       description,
       url,
-      body: page.body,
       searchable: normalizeSearchText(
         [page.title, description, page.group, page.parentTitle, page.body].join(' '),
       ),
     };
-    
+
     const headingItems = (page.toc ?? []).map((heading) => ({
       id: `heading:${page.slug.join('/')}:${heading.title}`,
       type: 'heading',
@@ -200,7 +215,6 @@ export function getSearchItems(docs: DocPage[]): any[] {
       content: heading.title,
       description,
       url: `${url}#${slugifyHeading(heading.title)}`,
-      body: page.body,
       searchable: normalizeSearchText([heading.title, page.title, description, page.body].join(' ')),
     }));
 

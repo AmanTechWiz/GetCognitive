@@ -12,7 +12,6 @@ type SearchItem = {
   description: string;
   url: string;
   searchable: string;
-  body: string;
 };
 type SearchPanelProps = {
   className?: string;
@@ -117,10 +116,7 @@ export function CognitiveSearchPanel({
       .filter((result) => result.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 9)
-      .map((result) => ({
-        ...result.item,
-        description: getSearchDescription(result.item, query),
-      }));
+      .map((result) => result.item);
   }, [search, searchItems]);
 
   return (
@@ -226,23 +222,6 @@ function scoreSearchItem(item: SearchItem, query: string) {
   if (terms.length > 1 && terms.every((term) => item.searchable.includes(term))) return 12;
 
   return 0;
-}
-
-function getSearchDescription(item: SearchItem, query: string) {
-  const body = item.body;
-  const normalizedQuery = normalizeSearchText(query);
-  const normalizedBody = normalizeSearchText(body);
-  const normalizedIndex = normalizedBody.indexOf(normalizedQuery);
-  if (normalizedIndex === -1) return item.description;
-
-  const plainBody = body
-    .replace(/[#*_`>\-[\]()]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const index = normalizeSearchText(plainBody).indexOf(normalizedQuery);
-  const start = Math.max(0, index - 70);
-  const end = Math.min(plainBody.length, index + normalizedQuery.length + 120);
-  return plainBody.slice(start, end).trim();
 }
 
 function normalizeSearchText(value: string) {
