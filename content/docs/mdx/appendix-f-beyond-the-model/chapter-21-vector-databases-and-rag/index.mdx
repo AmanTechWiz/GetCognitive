@@ -1,11 +1,11 @@
 ---
-title: 19. Vector Databases and RAG
+title: 21. Vector Databases and RAG
 lastUpdatedDate: '2026-08-09'
 ---
 
-# 19. Vector Databases and RAG
+# 21. Vector Databases and RAG
 
-In the previous chapter you saw how semantic search works: embed a query, embed your documents, find the closest vectors. That's great when you have a few hundred documents. But what happens when you have a million?
+In Chapter 20 you saw how semantic search works: embed a query, embed your documents, find the closest vectors. That's great when you have a few hundred documents. But what happens when you have a million?
 
 A million documents means a million vectors. Computing cosine similarity against every single one for every query is called **exact nearest-neighbour search** — and it scales linearly. At a million documents it's already slow. At a billion it's completely impractical.
 

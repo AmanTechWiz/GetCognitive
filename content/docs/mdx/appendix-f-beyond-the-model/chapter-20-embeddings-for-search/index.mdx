@@ -1,9 +1,9 @@
 ---
-title: 18. Embeddings for Search
+title: 20. Embeddings for Search
 lastUpdatedDate: '2026-08-09'
 ---
 
-# 18. Embeddings for Search
+# 20. Embeddings for Search
 
 You already understand what embeddings are — learned vectors that place semantically similar tokens close together in space. In Appendix A we talked about them in the context of *how a language model processes its own input*. But embeddings have a second life that's completely separate from generation: they're one of the most powerful tools for **search**.
 
@@ -62,7 +62,22 @@ Two vectors can be compared in different ways. The most common:
 
 **Cosine similarity** — measures the angle between two vectors, ignoring their magnitude. Range: −1 (opposite) to 1 (identical direction).
 
-$$\text{cos}(\theta) = \frac{A \cdot B}{\|A\| \cdot \|B\|}$$
+```text
+              A · B
+cos(θ) = ─────────────
+          ‖A‖ × ‖B‖
+
+  A · B  =  Σ (A_i × B_i)     ← dot product (sum of element-wise products)
+  ‖A‖    =  √(Σ A_i²)         ← L2 norm of A
+  ‖B‖    =  √(Σ B_i²)         ← L2 norm of B
+
+Example (2-dim vectors):
+  A = [3, 4]   B = [4, 3]
+  A · B = (3×4) + (4×3) = 24
+  ‖A‖   = √(9 + 16) = 5
+  ‖B‖   = √(16 + 9) = 5
+  cos   = 24 / (5 × 5) = 0.96   ← very similar direction
+```
 
 This is the dominant metric in NLP because it's insensitive to vector length. A short document and a long document about the same topic should have similar embeddings — cosine similarity correctly treats them as close even though their raw magnitudes differ.
 
@@ -182,4 +197,4 @@ There's no universal right answer — the best chunking strategy depends on your
 - At index time and query time, you must use the *same* embedding model.
 - Chunking strategy — how you split long documents — significantly affects search quality.
 
-Next up: what happens when your document collection has millions of entries? Computing cosine similarity against every single vector is too slow. That's where vector databases come in.
+Next up: what happens when your document collection has millions of entries? Computing cosine similarity against every single vector is too slow. That's where vector databases come in — covered in Chapter 21.

@@ -1,21 +1,46 @@
 ---
 title: Appendix F — Beyond the Model
-description: 'Embeddings, vector databases, RAG, and tool calling for production AI'
+description: 'Embeddings for search, vector databases, RAG, tool calling, and AI agents'
 isChapterOverview: true
-lastUpdatedDate: '2026-08-08'
+lastUpdatedDate: '2026-08-11'
 ---
 
 # Appendix F — Beyond the Model
 
-Language models are powerful, but they're limited:
-- They only know what they were trained on
-- They can't execute code or call APIs
-- They can't access real-time information
-- They generate text but can't take actions
+A fine-tuned, aligned language model is powerful — but it's still an island. It only knows what was in its training data, it can't look anything up, it can't run code, and it can't take any action in the world.
 
-This appendix covers technologies that extend LLMs beyond pure text generation.
+This appendix covers the systems that extend LLMs beyond text generation into useful applications.
 
-**Embeddings + Vector Databases + RAG** let models access current information.
-**Tool calling** lets models take action in the world.
+---
 
-Together, these transform language models from text generators into intelligent agents capable of real-world tasks.
+## What's in this appendix
+
+**Chapter 20 — Embeddings for Search**
+
+The embedding vectors from Appendix A have a second life completely separate from language generation: semantic search. This chapter covers how embedding models convert text into vectors, why cosine similarity measures meaning better than keyword overlap, and how to build a working semantic search pipeline. Includes the full ASCII math for cosine similarity, a from-scratch search implementation, and a head-to-head comparison against keyword search.
+
+**Chapter 21 — Vector Databases and RAG**
+
+Semantic search against a million documents requires more than a matrix multiply. This chapter covers ANN (Approximate Nearest Neighbour) algorithms, HNSW's layered graph structure, and how vector databases wrap all of this for production use. Then: RAG (Retrieval-Augmented Generation) — the architecture that lets an LLM answer questions from documents it was never trained on. Includes a complete minimal RAG implementation: index, retrieve, build prompt, generate.
+
+**Chapter 22 — Tool Calling and AI Agents**
+
+LLMs have two hard limits: knowledge cutoff and imprecise arithmetic. Tool calling solves both. This chapter covers the full six-step tool call protocol (define → inject → model outputs JSON → execute → inject result → respond), parallel vs sequential multi-tool calls, how models are trained to use tools, the four common failure modes with mitigations, and how repeated tool calling becomes the agent loop. Complete working implementation with error handling.
+
+---
+
+## The arc
+
+```
+Embedding model → semantic similarity → semantic search
+                                              ↓
+                              vector database (ANN/HNSW)
+                                              ↓
+                         RAG: retrieve context → stuff into prompt → LLM answers
+                                              ↓
+                   Tool calling: model decides which tools to call
+                                              ↓
+                     Agent loop: tool call → observe → next decision → ...
+```
+
+Each layer builds on the previous. Embeddings enable search. Search enables RAG. Tool calling enables agents. Together they transform a text generator into a system that can work with real-world data, real-time information, and external computation.
