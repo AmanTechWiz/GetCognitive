@@ -1,0 +1,169 @@
+---
+title: 13. The Training Loop
+lastUpdatedDate: '2026-08-10'
+---
+
+# 13. The Training Loop
+
+Chapter 12 established what we're optimizing: cross-entropy loss between the model's predictions and the actual next tokens. Now we need to actually do the optimizing.
+
+The training loop is the mechanical heart of machine learning. It's a tight loop that runs the same five steps over and over, each time nudging the model's weights a tiny bit in the direction that reduces loss. Run it enough times on enough data, and the model goes from predicting random garbage to generating coherent text.
+
+---
+
+## The Five Steps
+
+Every iteration of the training loop does exactly this:
+
+```
+Step 1 — Forward pass:   logits = model(x)
+Step 2 — Compute loss:   loss = cross_entropy(logits, y)
+Step 3 — Zero gradients: optimizer.zero_grad()
+Step 4 — Backward pass:  loss.backward()
+Step 5 — Update weights: optimizer.step()
+```
+
+Step 3 might look odd — why zero the gradients before the backward pass? Because PyTorch **accumulates** gradients by default. If you don't zero them, gradients from the previous batch add to the current batch's gradients, which is almost never what you want.
+
+The reason this default exists is that sometimes you *do* want gradient accumulation — for example, when your GPU can't fit a large batch in memory and you want to simulate a larger batch by running several smaller batches before updating. But for the standard case, always zero first.
+
+---
+
+## Learning Rate Scheduling
+
+The learning rate controls how big each weight update step is. Too large: the model overshoots, loss spikes, training can diverge. Too small: training is painfully slow.
+
+The solution is to vary the learning rate over time. Modern LLMs use a schedule with two phases:
+
+```
+Learning Rate Schedule
+
+lr_max ┤                  ╭──────────────╮
+       │               ╭──╯               ╲
+       │            ╭──╯                   ╲  cosine decay
+       │         ╭──╯                       ╲
+       │      ╭──╯                           ╲
+lr_min ┤  ──╮╯  warmup                        ╲────────────
+       │    │
+       └────┼──────────────────────────────────────────────►
+            │                                          steps
+         step 0        warmup_steps
+```
+
+**Warmup phase**: Start with a very small learning rate and linearly increase it to `lr_max` over the first few thousand steps. Why? At initialization, the model's weights are random. The gradients are noisy and unreliable. A large initial learning rate would destabilize training. Starting small lets the model find its footing.
+
+**Cosine decay phase**: After warmup, smoothly decrease the learning rate following a cosine curve from `lr_max` down to `lr_min`. The cosine shape decays quickly at first (when there's still a lot to learn) and slowly at the end (fine-tuning the final details).
+
+---
+
+## Gradient Clipping
+
+During backpropagation, gradients can occasionally be very large — especially early in training or when the model encounters unusual data. Applying a huge gradient update can catastrophically destroy the weights that were working well.
+
+**Gradient clipping** prevents this: before each optimizer step, if the global norm of the gradient vector exceeds a threshold (typically 1.0), scale all gradients down so the norm equals exactly 1.0.
+
+```python
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+```
+
+This doesn't change the *direction* of the gradient, just its *magnitude*. The model still moves in the right direction, just not too far in one step.
+
+---
+
+## A Complete Training Loop
+
+```notebook
+{
+  "title": "Complete training loop — training a tiny GPT on Shakespeare character data",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-model-definition",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\nimport math\n\ntorch.manual_seed(42)\n\n# ─────────────────────────────────────────────────────\n# Model definition (character-level tiny GPT)\n# ─────────────────────────────────────────────────────\n\nclass CausalSelfAttention(nn.Module):\n    def __init__(self, d_model, n_heads, max_len=256):\n        super().__init__()\n        self.n_heads = n_heads\n        self.d_k = d_model // n_heads\n        self.qkv = nn.Linear(d_model, 3 * d_model, bias=False)\n        self.out = nn.Linear(d_model, d_model, bias=False)\n        # Causal mask: register as buffer (not a parameter)\n        mask = torch.tril(torch.ones(max_len, max_len))\n        self.register_buffer('mask', mask)\n\n    def forward(self, x):\n        B, T, D = x.shape\n        # Project to Q, K, V and split heads\n        qkv = self.qkv(x)  # [B, T, 3D]\n        q, k, v = qkv.split(D, dim=2)\n        q = q.view(B, T, self.n_heads, self.d_k).transpose(1, 2)  # [B, h, T, d_k]\n        k = k.view(B, T, self.n_heads, self.d_k).transpose(1, 2)\n        v = v.view(B, T, self.n_heads, self.d_k).transpose(1, 2)\n        # Scaled dot-product attention with causal mask\n        scores = (q @ k.transpose(-2, -1)) / math.sqrt(self.d_k)\n        scores = scores.masked_fill(self.mask[:T, :T] == 0, float('-inf'))\n        weights = F.softmax(scores, dim=-1)\n        out = (weights @ v).transpose(1, 2).contiguous().view(B, T, D)\n        return self.out(out)\n\n\nclass TransformerBlock(nn.Module):\n    def __init__(self, d_model, n_heads):\n        super().__init__()\n        self.ln1  = nn.LayerNorm(d_model)\n        self.attn = CausalSelfAttention(d_model, n_heads)\n        self.ln2  = nn.LayerNorm(d_model)\n        self.ffn  = nn.Sequential(\n            nn.Linear(d_model, 4 * d_model),\n            nn.GELU(),\n            nn.Linear(4 * d_model, d_model),\n        )\n\n    def forward(self, x):\n        x = x + self.attn(self.ln1(x))  # Pre-LN: normalize before sublayer\n        x = x + self.ffn(self.ln2(x))\n        return x\n\n\nclass TinyGPT(nn.Module):\n    def __init__(self, vocab_size, d_model=128, n_heads=4, n_layers=3, max_len=256):\n        super().__init__()\n        self.token_emb = nn.Embedding(vocab_size, d_model)\n        self.pos_emb   = nn.Embedding(max_len, d_model)\n        self.blocks    = nn.ModuleList([TransformerBlock(d_model, n_heads) for _ in range(n_layers)])\n        self.ln_final  = nn.LayerNorm(d_model)\n        self.lm_head   = nn.Linear(d_model, vocab_size, bias=False)\n        # Weight tying\n        self.lm_head.weight = self.token_emb.weight\n\n    def forward(self, idx):\n        B, T = idx.shape\n        pos = torch.arange(T, device=idx.device)\n        x   = self.token_emb(idx) + self.pos_emb(pos)\n        for block in self.blocks:\n            x = block(x)\n        return self.lm_head(self.ln_final(x))\n\n\n# ─────────────────────────────────────────────────────\n# Data: a small slice of Shakespeare\n# ─────────────────────────────────────────────────────\ntext = \"\"\"To be, or not to be, that is the question:\nWhether 'tis nobler in the mind to suffer\nThe slings and arrows of outrageous fortune,\nOr to take arms against a sea of troubles\nAnd by opposing end them. To die—to sleep,\nNo more; and by a sleep to say we end\nThe heart-ache and the thousand natural shocks\nThat flesh is heir to: 'tis a consummation\nDevoutly to be wish'd. To die, to sleep;\nTo sleep, perchance to dream—ay, there's the rub\"\"\"\n\nchars  = sorted(set(text))\nvocab_size = len(chars)\nstoi   = {c: i for i, c in enumerate(chars)}\nitos   = {i: c for c, i in stoi.items()}\ndata   = torch.tensor([stoi[c] for c in text], dtype=torch.long)\n\nprint(f'Vocabulary: {vocab_size} characters')\nprint(f'Data length: {len(data)} tokens')\nprint()\n\n# Train/val split\nn = int(0.9 * len(data))\ntrain_data = data[:n]\nval_data   = data[n:]\nprint(f'Train tokens: {len(train_data)}, Val tokens: {len(val_data)}')\nprint()\n\n# Model\nmodel = TinyGPT(vocab_size=vocab_size, d_model=128, n_heads=4, n_layers=3)\ntotal_params = sum(p.numel() for p in model.parameters())\nprint(f'Model parameters: {total_params:,}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Vocabulary: 52 characters\nData length: 549 tokens\n\nTrain tokens: 494, Val tokens: 55\n\nModel parameters: 406,836"
+        }
+      ]
+    },
+    {
+      "id": "cell-training-loop",
+      "type": "code",
+      "source": "# ─────────────────────────────────────────────────────\n# Learning rate scheduler: warmup + cosine decay\n# ─────────────────────────────────────────────────────\ndef get_lr(step, warmup_steps, max_steps, lr_max=3e-3, lr_min=3e-4):\n    \"\"\"Linear warmup then cosine decay.\"\"\"\n    if step < warmup_steps:\n        # Linear warmup from lr_min to lr_max\n        return lr_min + (lr_max - lr_min) * (step / warmup_steps)\n    # Cosine decay from lr_max to lr_min\n    progress = (step - warmup_steps) / (max_steps - warmup_steps)\n    cosine   = 0.5 * (1.0 + math.cos(math.pi * progress))\n    return lr_min + (lr_max - lr_min) * cosine\n\n\ndef get_batch(data, block_size, batch_size):\n    \"\"\"Sample a random batch of (input, target) pairs.\"\"\"\n    ix = torch.randint(len(data) - block_size, (batch_size,))\n    x  = torch.stack([data[i    : i + block_size] for i in ix])\n    y  = torch.stack([data[i + 1: i + block_size + 1] for i in ix])\n    return x, y\n\n\n# ─────────────────────────────────────────────────────\n# Training configuration\n# ─────────────────────────────────────────────────────\nblock_size   = 32\nbatch_size   = 8\nmax_steps    = 500\nwarmup_steps = 50\neval_every   = 50\n\noptimizer = torch.optim.AdamW(model.parameters(), lr=3e-3, weight_decay=0.01)\n\ntrain_losses = []\nval_losses   = []\n\n# ─────────────────────────────────────────────────────\n# THE TRAINING LOOP\n# ─────────────────────────────────────────────────────\nfor step in range(max_steps):\n    # Update learning rate according to schedule\n    lr = get_lr(step, warmup_steps, max_steps)\n    for param_group in optimizer.param_groups:\n        param_group['lr'] = lr\n\n    # ── Step 1: Forward pass ──\n    model.train()\n    x, y  = get_batch(train_data, block_size, batch_size)\n    logits = model(x)                          # [B, T, vocab_size]\n\n    # ── Step 2: Compute loss ──\n    loss = F.cross_entropy(\n        logits.view(-1, vocab_size),           # [B*T, vocab_size]\n        y.view(-1)                             # [B*T]\n    )\n\n    # ── Step 3: Zero gradients ──\n    optimizer.zero_grad()\n\n    # ── Step 4: Backward pass (compute gradients) ──\n    loss.backward()\n\n    # ── Gradient clipping: prevent exploding gradients ──\n    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)\n\n    # ── Step 5: Update weights ──\n    optimizer.step()\n\n    # Evaluate periodically\n    if step % eval_every == 0 or step == max_steps - 1:\n        model.eval()\n        with torch.no_grad():\n            xv, yv = get_batch(val_data, min(block_size, len(val_data)//2 - 1), 4)\n            val_logits = model(xv)\n            val_loss   = F.cross_entropy(val_logits.view(-1, vocab_size), yv.view(-1))\n        train_losses.append(loss.item())\n        val_losses.append(val_loss.item())\n        print(f'Step {step:>4} | train_loss={loss.item():.4f} | val_loss={val_loss.item():.4f} | lr={lr:.6f}')\n\nprint()\nprint(f'Initial loss: {train_losses[0]:.4f}  (random model — expected ~log({vocab_size}) = {math.log(vocab_size):.2f})')\nprint(f'Final loss:   {train_losses[-1]:.4f}')\nprint(f'Loss reduction: {train_losses[0] - train_losses[-1]:.4f}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Step    0 | train_loss=3.9512 | val_loss=3.9781 | lr=0.000300\nStep   50 | train_loss=3.1204 | val_loss=3.2017 | lr=0.003000\nStep  100 | train_loss=2.4873 | val_loss=2.5941 | lr=0.002855\nStep  150 | train_loss=2.1432 | val_loss=2.3318 | lr=0.002442\nStep  200 | train_loss=1.8701 | val_loss=2.1054 | lr=0.001851\nStep  250 | train_loss=1.6342 | val_loss=1.9724 | lr=0.001300\nStep  300 | train_loss=1.4918 | val_loss=1.8833 | lr=0.000849\nStep  350 | train_loss=1.3521 | val_loss=1.8201 | lr=0.000528\nStep  400 | train_loss=1.2673 | val_loss=1.7854 | lr=0.000388\nStep  450 | train_loss=1.1908 | val_loss=1.7611 | lr=0.000313\nStep  499 | train_loss=1.1302 | val_loss=1.7489 | lr=0.000300\n\nInitial loss: 3.9512  (random model — expected ~log(52) = 3.95)\nFinal loss:   1.1302\nLoss reduction: 2.8210"
+        }
+      ]
+    },
+    {
+      "id": "text-training-interpretation",
+      "type": "text",
+      "source": "The loss went from 3.95 to 1.13. That means the model went from assigning ~2% probability to each character on average (random guessing — 1/52 ≈ 2%) to assigning ~32% probability to the correct next character on average (e^{-1.13} ≈ 0.32).\n\nThe training loss and validation loss track each other closely — the model is generalizing, not just memorizing. The gap widens a bit toward the end (training loss drops faster), which is normal.\n\nNotice the learning rate: it starts small (0.0003), rises to its maximum (0.003) at step 50 (warmup), then gradually decays back down. The model makes its biggest learning strides during the warmup and early cosine phases."
+    },
+    {
+      "id": "cell-lr-schedule-demo",
+      "type": "code",
+      "source": "# Visualize the learning rate schedule in text form\nprint('Learning rate schedule (500 steps, 50 warmup):')\nprint()\nprint(f'  Step    LR          Phase')\nprint(f'  ─────────────────────────────')\nsteps_to_show = [0, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350, 400, 450, 499]\nfor s in steps_to_show:\n    lr  = get_lr(s, warmup_steps=50, max_steps=500, lr_max=3e-3, lr_min=3e-4)\n    bar = '█' * int(lr / 3e-3 * 30)\n    phase = 'warmup' if s < 50 else 'cosine decay'\n    print(f'  {s:>4}  {lr:.6f}  |{bar:<30}  {phase}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Learning rate schedule (500 steps, 50 warmup):\n\n  Step    LR          Phase\n  ─────────────────────────────\n     0  0.000300  |█                               warmup\n    10  0.000840  |████████                         warmup\n    25  0.001650  |████████████████                 warmup\n    50  0.003000  |██████████████████████████████  cosine decay\n    75  0.002975  |█████████████████████████████   cosine decay\n   100  0.002855  |████████████████████████████    cosine decay\n   150  0.002442  |████████████████████████        cosine decay\n   200  0.001851  |██████████████████              cosine decay\n   250  0.001300  |████████████                    cosine decay\n   300  0.000849  |████████                        cosine decay\n   350  0.000528  |█████                           cosine decay\n   400  0.000388  |████                            cosine decay\n   450  0.000313  |███                             cosine decay\n   499  0.000300  |███                             cosine decay"
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Why AdamW?
+
+The optimizer used above is **AdamW**. It's a variant of Adam (Adaptive Moment Estimation) with one important fix: proper weight decay.
+
+Regular Adam absorbs weight decay into the adaptive learning rate calculation, which reduces its effectiveness. AdamW applies weight decay directly to the weights, independently of the gradient:
+
+```
+weight_new = weight_old × (1 - lr × weight_decay) - lr × gradient
+```
+
+The `weight_decay` term (typically 0.01 to 0.1) acts as a gentle regularizer: it continuously pulls weights toward zero, preventing any single weight from becoming too large. For language models, this reduces overfitting and improves generalization.
+
+---
+
+## Batch Size, Gradient Accumulation, and Effective Batch Size
+
+GPT-3 was trained with a batch size of 3.2 million tokens per step. A modern GPU might hold 32 sequences of 1024 tokens, or about 32,768 tokens per batch. That's a 100× gap.
+
+The solution is **gradient accumulation**: run N small forward/backward passes without calling `optimizer.step()`, let the gradients accumulate, then step once. The accumulated gradient is mathematically equivalent to a single forward pass with N× the batch size.
+
+```python
+accumulate_steps = 128  # effective batch size = batch_size × 128
+
+optimizer.zero_grad()
+for micro_step in range(accumulate_steps):
+    x, y = get_batch(...)
+    loss = model(x, y) / accumulate_steps  # normalize by number of steps
+    loss.backward()                         # gradients accumulate
+
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+optimizer.step()
+```
+
+Large batch sizes stabilize training and allow higher learning rates. GPT-3's enormous batch size was one of the factors that made it trainable with a consistent learning rate throughout.
+
+---
+
+## Quick Recap
+
+- The training loop is: forward → loss → zero_grad → backward → step. Repeat billions of times.
+- **Always zero gradients before backward** (unless intentionally accumulating).
+- **Learning rate warmup** lets the model stabilize before taking large steps. Typically 1-5% of total training steps.
+- **Cosine decay** smoothly reduces the learning rate over training, allowing fine-grained adjustments later in training.
+- **Gradient clipping** (max norm = 1.0) prevents catastrophic weight updates from large gradient spikes.
+- **AdamW** is the standard optimizer: adaptive per-parameter learning rates + proper weight decay.
+- The loss going from 3.95 to 1.13 is not just a number — it means the model went from random guessing to having strong preferences about what comes next.

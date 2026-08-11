@@ -1,14 +1,46 @@
 ---
 title: Appendix B — Learning Language Before Transformers
-description: 'How neural networks learn, why sequence models are needed, and how RNNs and LSTMs paved the way'
+description: 'How neural networks learn, why sequential data breaks feed-forward architectures, and how RNNs and LSTMs got us most of the way there'
 isChapterOverview: true
-lastUpdatedDate: '2026-08-08'
+lastUpdatedDate: '2026-08-10'
 ---
 
 # Appendix B — Learning Language Before Transformers
 
-Before transformers revolutionized AI, researchers struggled with a fundamental problem: **how do you train a neural network to understand sequential data like language?**
+Appendix A left you with a pipeline: text → tokens → embedding vectors → tensor. You have numbers. Now what?
 
-This appendix covers the pre-transformer era of deep learning. Understanding this history is crucial because it shows why transformers were revolutionary—they solved fundamental problems that had limited earlier architectures for decades.
+The "now what" is a neural network. Something that takes those vectors, does a lot of math on them, and eventually learns to predict what word comes next. This appendix is about how that works — and more importantly, why the first few approaches had serious cracks in them that took a decade to fix.
 
-We'll see how neural networks learn through backpropagation, why feed-forward architectures fail at sequential tasks, and how recurrent architectures like LSTMs attempted to solve these problems. Most importantly, we'll understand their limitations, which directly motivated the transformer breakthrough.
+You don't need any machine learning background. You need the vocabulary from Appendix A (tokens, embeddings, tensors, matrix multiplication, activation functions) and the curiosity to follow a story about a problem that turned out to be surprisingly hard.
+
+---
+
+## What's in this appendix
+
+**Chapter 7 — How Neural Networks Learn**
+
+Start from zero. What is a neuron? How does a network make a prediction? How does it know when it's wrong, and how does it fix itself? This chapter builds a complete neural network from scratch in PyTorch — single neuron, multi-layer network, forward pass, loss, backpropagation, the full training loop. Everything in modern LLMs is built on exactly this foundation.
+
+**Chapter 8 — The Problem with Sequential Data**
+
+A feed-forward network looks at all its inputs simultaneously and treats them independently. That's fine for classifying images. For language, it's catastrophic. "Dog bites man" and "Man bites dog" are the same tokens in different order — but mean completely different things. This chapter shows precisely why order-blind networks fail at language and what properties any sequence model would need to have.
+
+**Chapter 9 — RNNs, LSTMs, and Why They Weren't Enough**
+
+Recurrent networks were the answer. They read text one token at a time and maintain a running "memory" — a hidden state that carries information forward. For a few years, RNNs were state of the art for everything language-related. Then LSTMs improved them, and GRUs simplified them. But the cracks kept showing. Sequential computation couldn't be parallelized. Memory got squeezed through a fixed-size bottleneck. Long-range dependencies kept getting lost. This chapter covers the whole arc — what each architecture solved, what it didn't, and why by 2017 the field was ready for something fundamentally different.
+
+**Chapter 10 — Sequence to Sequence Learning and the Context Vector**
+
+The moment neural networks first beat traditional machine translation: Sutskever, Vinyals, and Le's 2014 seq2seq paper. Two separate LSTMs — an encoder that reads the source and produces a context vector, and a decoder that generates the translation from it. What the context vector actually is, the clever input-reversal trick that improved gradients, and the one structural limitation that no amount of LSTM tuning could fix: a fixed-size vector can only hold so much. This chapter sets the stage for Bahdanau's attention mechanism and, ultimately, the transformer.
+
+---
+
+## A note on numbering
+
+Chapters in this appendix are numbered 7–10, continuing from Appendix A's 1–6. The numbering runs straight through all the appendices. If you want a chapter reference that maps to the full curriculum, that's why.
+
+---
+
+## What comes next
+
+Appendix C picks up exactly where this one ends. The limitations of RNNs and the seq2seq bottleneck — sequential computation, fixed-size memory, vanishing gradients — all get solved in one go by the attention mechanism. That solution, described in "Attention Is All You Need" (2017), became the foundation of every modern language model. By the end of this appendix, you'll understand exactly *why* that paper mattered.

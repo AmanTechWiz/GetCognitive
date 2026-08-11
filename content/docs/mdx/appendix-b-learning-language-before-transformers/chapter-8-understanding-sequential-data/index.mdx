@@ -1,0 +1,245 @@
+---
+title: 8. The Problem with Sequential Data
+lastUpdatedDate: '2026-08-10'
+---
+
+# 8. The Problem with Sequential Data
+
+The network from Chapter 7 can learn. It gets a batch of inputs, makes predictions, calculates how wrong it was, and updates its weights accordingly. Given enough examples and enough training time, it gets quite good at pattern recognition.
+
+So why can't you just use that kind of network for language?
+
+The problem is in how it sees its input.
+
+---
+
+## The Network Doesn't Know About Order
+
+A feed-forward network processes all its inputs at the same time, independently. It has no concept of "position 1 came before position 2." To the network, a bag of input features is a bag of input features — order is invisible.
+
+For some tasks, that's fine. If you're predicting whether a house is expensive based on square footage, number of bedrooms, and location, the order in which you list those features doesn't matter.
+
+But language is almost entirely about order.
+
+```
+"Dog bites man"
+"Man bites dog"
+```
+
+Same three tokens. Different order. Completely different meaning — and newsworthy for entirely different reasons.
+
+```notebook
+{
+  "title": "Order matters — the same tokens, completely different meaning",
+  "runtime": "Python · tiktoken",
+  "cells": [
+    {
+      "id": "cell-order",
+      "type": "code",
+      "source": "import tiktoken\nenc = tiktoken.get_encoding('cl100k_base')\n\n# Two sentences with the same words in different order\ns1 = 'Dog bites man'\ns2 = 'Man bites dog'\n\ntokens1 = enc.encode(s1)\ntokens2 = enc.encode(s2)\n\npieces1 = [enc.decode([t]) for t in tokens1]\npieces2 = [enc.decode([t]) for t in tokens2]\n\nprint('Sentence 1:', s1)\nprint(f'  Tokens: {pieces1}')\nprint(f'  IDs:    {tokens1}')\nprint()\nprint('Sentence 2:', s2)\nprint(f'  Tokens: {pieces2}')\nprint(f'  IDs:    {tokens2}')\nprint()\nprint('Sorted token IDs (order destroyed):')\nprint(f'  Sentence 1 sorted: {sorted(tokens1)}')\nprint(f'  Sentence 2 sorted: {sorted(tokens2)}')\nprint()\nprint('A network that ignores order sees both sentences as IDENTICAL.')\nprint('That is catastrophic for language understanding.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Sentence 1: Dog bites man\n  Tokens: ['Dog', ' bites', ' man']\n  IDs:    [12850, 39105, 893]\n\nSentence 2: Man bites dog\n  Tokens: ['Man', ' bites', ' dog']\n  IDs:    [1858, 39105, 5679]\n\nSorted token IDs (order destroyed):\n  Sentence 1 sorted: [893, 12850, 39105]\n  Sentence 2 sorted: [1858, 5679, 39105]\n\nA network that ignores order sees both sentences as IDENTICAL.\nThat is catastrophic for language understanding."
+        }
+      ]
+    }
+  ]
+}
+```
+
+These are different token IDs, so a network would distinguish them. But the deeper problem isn't that specific pair — it's that a feed-forward network has no mechanism for encoding *relationships between positions*. It doesn't know that "subject of the sentence" is typically the first noun, that "not" negates what immediately follows it, or that the pronoun "they" refers back to a noun introduced several tokens ago.
+
+---
+
+## The Naïve Approach and Why It Fails
+
+The most naïve fix is to concatenate token embeddings in order and feed them into a feed-forward network. For a 4-token sentence:
+
+```
+[emb_token1 | emb_token2 | emb_token3 | emb_token4]  →  feed-forward network  →  prediction
+```
+
+This preserves order — position 1's embedding goes into the first slot, position 2 into the second slot. And for that specific length of sentence, it works fine.
+
+But there are two fatal problems.
+
+```notebook
+{
+  "title": "Naïve approach: concatenate embeddings, feed to network",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-naive",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\n# Suppose we fix sentence length to exactly 4 tokens\n# Each token has a 8-dimensional embedding\nseq_len = 4\nemb_dim = 8\n\n# Concatenate: 4 embeddings × 8 dims = 32-dim input vector\nconcatenated_input_size = seq_len * emb_dim  # = 32\n\nnaive_model = nn.Sequential(\n    nn.Linear(concatenated_input_size, 64),\n    nn.ReLU(),\n    nn.Linear(64, 50257)  # predict next token over full vocabulary\n)\n\n# Try it on a 4-token sentence\nembeddings_4 = torch.randn(1, seq_len * emb_dim)   # flattened\nlogits = naive_model(embeddings_4)\nprint('4-token input shape:', embeddings_4.shape)\nprint('Output shape:', logits.shape, '← works!')\nprint()\n\n# Problem 1: Fixed length — different sentence lengths need different models\nembeddings_6 = torch.randn(1, 6 * emb_dim)   # 6-token sentence\ntry:\n    logits_6 = naive_model(embeddings_6)    # wrong input size!\nexcept RuntimeError as e:\n    print('6-token input fails:')\n    print(f'  Error: {e}')\nprint()\nprint('Problem 1: A fixed-size input layer cannot handle variable-length sequences.')\nprint('You would need a separate model for every possible sentence length.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "4-token input shape: torch.Size([1, 32])\nOutput shape: torch.Size([1, 50257]) ← works!\n\n6-token input fails:\n  Error: mat1 and mat2 shapes cannot be multiplied (1x48 and 32x64)\n\nProblem 1: A fixed-size input layer cannot handle variable-length sequences.\nYou would need a separate model for every possible sentence length."
+        }
+      ]
+    },
+    {
+      "id": "cell-naive-2",
+      "type": "code",
+      "source": "# Problem 2: The network learns different weights for each position\n# This means it cannot share what it learns about a concept across positions\n\n# In the concatenated approach:\n# - token at position 1 uses weights W[:,0:8]\n# - token at position 2 uses weights W[:,8:16]\n# - token at position 3 uses weights W[:,16:24]\n# These are SEPARATE sets of weights — completely unrelated to each other\n\n# If the model learns that 'cat' at position 1 means 'animal',\n# it has NO way to apply that knowledge to 'cat' appearing at position 3\n\nprint('Problem 2: Knowledge cannot be shared across positions.')\nprint()\nprint('Concatenated embedding layout:')\nfor pos in range(4):\n    start = pos * emb_dim\n    end   = (pos + 1) * emb_dim\n    print(f'  Position {pos+1}: input slots [{start}:{end}] → independent weight block')\nprint()\nprint('What \"cat\" means is different depending on where in the sentence it appears.')\nprint('The network has to re-learn the concept of \"cat\" for every single position.')\nprint('Real language has no such position limitation — a noun is a noun wherever it appears.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Problem 2: Knowledge cannot be shared across positions.\n\nConcatenated embedding layout:\n  Position 1: input slots [0:8] → independent weight block\n  Position 2: input slots [8:16] → independent weight block\n  Position 3: input slots [16:24] → independent weight block\n  Position 4: input slots [24:32] → independent weight block\n\nWhat \"cat\" means is different depending on where in the sentence it appears.\nThe network has to re-learn the concept of \"cat\" for every single position.\nReal language has no such position limitation — a noun is a noun wherever it appears."
+        }
+      ]
+    }
+  ]
+}
+```
+
+Two fatal flaws:
+
+1. **Fixed length.** Real sentences vary wildly in length. A fixed-size input layer can't handle that. GPT processes sequences up to 4096 tokens. Building a different model for every length from 1 to 4096 is obviously not viable.
+
+2. **No weight sharing.** The network assigns completely separate weights to position 1 and position 3. If "cat" appears at position 1, the model uses one weight block. If "cat" appears at position 3, it uses a different weight block. Those blocks don't talk to each other. The model has to independently re-learn the semantics of "cat" for every possible position. It can't generalize.
+
+---
+
+## Why This Matters: Long-Range Dependencies
+
+Even setting aside the fixed-length problem, there's a deeper issue with position-blind processing. Consider:
+
+```
+"The trophy didn't fit in the suitcase because it was too big."
+```
+
+What does "it" refer to? The trophy. You know this because "too big" makes sense as a description of the trophy (which didn't fit) rather than the suitcase (which is the thing being fitted into).
+
+That's a dependency that spans seven tokens. The model needs to look back from "big" to connect it correctly to "trophy." A network that processes tokens independently has no way to build that connection.
+
+```notebook
+{
+  "title": "Long-range dependencies — why position-independent processing fails",
+  "runtime": "Python · tiktoken",
+  "cells": [
+    {
+      "id": "cell-dependency",
+      "type": "code",
+      "source": "import tiktoken\nenc = tiktoken.get_encoding('cl100k_base')\n\n# Classic Winograd schema sentence — requires long-range reasoning\nsentence = 'The trophy did not fit in the suitcase because it was too big'\ntokens = enc.encode(sentence)\npieces = [enc.decode([t]) for t in tokens]\n\nprint(f'Sentence: \"{sentence}\"')\nprint(f'Tokens: {pieces}')\nprint()\n\n# Mark the key dependencies\nprint('Dependency structure:')\nprint('  \"it\" (position 12) → refers to → \"trophy\" (position 2)')\nprint('  The model must look back 10 positions to resolve this pronoun.')\nprint()\nprint('More examples of long-range dependencies in everyday language:')\nprint()\nexamples = [\n    ('\"The lawyer who sued the company won.\"',\n     '\"won\" must agree with \"lawyer\" despite \"company\" being closer'),\n    ('\"I grew up in France, so I speak fluent ___\"',\n     '\"French\" depends on \"France\", which may be far back in the sentence'),\n    ('\"The keys to the cabinet are ___\"',\n     '\"are\" must agree with \"keys\" not \"cabinet\" (the closer noun)'),\n]\nfor sent, note in examples:\n    print(f'  {sent}')\n    print(f'    → {note}')\n    print()",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Sentence: \"The trophy did not fit in the suitcase because it was too big\"\nTokens: ['The', ' trophy', ' did', ' not', ' fit', ' in', ' the', ' suit', 'case', ' because', ' it', ' was', ' too', ' big']\n\nDependency structure:\n  \"it\" (position 12) → refers to → \"trophy\" (position 2)\n  The model must look back 10 positions to resolve this pronoun.\n\nMore examples of long-range dependencies in everyday language:\n\n  \"The lawyer who sued the company won.\"\n    → \"won\" must agree with \"lawyer\" despite \"company\" being closer\n\n  \"I grew up in France, so I speak fluent ___\"\n    → \"French\" depends on \"France\", which may be far back in the sentence\n\n  \"The keys to the cabinet are ___\"\n    → \"are\" must agree with \"keys\" not \"cabinet\" (the closer noun)"
+        }
+      ]
+    }
+  ]
+}
+```
+
+A language model needs to handle these. To do that, it needs **memory** — some way to carry information from earlier positions forward and make it available when processing later positions.
+
+---
+
+## What a Sequence Model Needs
+
+At this point the problem is clear. A network for language needs to satisfy three things that a plain feed-forward network doesn't:
+
+**1. Variable-length input.** Sentences are 3 tokens or 300 tokens or 3000 tokens. The architecture has to handle all of these with the same set of weights.
+
+**2. Position sensitivity.** "Dog bites man" and "Man bites dog" are not the same. The model needs to know *where* each token appears, not just *what* it is.
+
+**3. Long-range memory.** A pronoun early in a sentence might be resolved by its antecedent dozens of tokens back. The model needs to maintain and access information across arbitrary spans.
+
+```notebook
+{
+  "title": "Three requirements for a viable sequence model",
+  "runtime": "Python",
+  "cells": [
+    {
+      "id": "cell-requirements",
+      "type": "code",
+      "source": "# Summarize what we've established — no runnable ML code here,\n# just a structured comparison of what we need vs what we have\n\nrequirements = [\n    (\n        'Variable-length input',\n        'Feed-forward net: FAILS — fixed input size',\n        'Sequence model: must process any length with the same weights',\n    ),\n    (\n        'Position sensitivity',\n        'Feed-forward net: FAILS — treats inputs as unordered bag of features',\n        'Sequence model: must encode where each token appears, not just what it is',\n    ),\n    (\n        'Long-range memory',\n        'Feed-forward net: FAILS — no mechanism to relate position 1 to position 100',\n        'Sequence model: must maintain and access context across the full sequence',\n    ),\n]\n\nfor req, fail, need in requirements:\n    print(f'Requirement: {req}')\n    print(f'  {fail}')\n    print(f'  {need}')\n    print()",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Requirement: Variable-length input\n  Feed-forward net: FAILS — fixed input size\n  Sequence model: must process any length with the same weights\n\nRequirement: Position sensitivity\n  Feed-forward net: FAILS — treats inputs as unordered bag of features\n  Sequence model: must encode where each token appears, not just what it is\n\nRequirement: Long-range memory\n  Feed-forward net: FAILS — no mechanism to relate position 1 to position 100\n  Sequence model: must maintain and access context across the full sequence"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The natural architectural response to requirements 1 and 2 is the same idea: **process tokens one at a time, in order, using the same weights at every step**. This is weight sharing over time — the network doesn't need separate weights for each position, because it applies the same computation at each step. It also handles variable length naturally, because you just keep going until the sequence ends.
+
+That's the core idea behind Recurrent Neural Networks.
+
+---
+
+## A Toy Demonstration of Why Order Matters
+
+Before we move to RNNs, let's make the failure mode concrete with an actual experiment. We'll take a tiny language modeling task and show that a network with no positional awareness genuinely cannot learn it.
+
+```notebook
+{
+  "title": "Demonstrating the failure: a bag-of-words model vs. a position-aware model",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-bow-fail",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\ntorch.manual_seed(42)\n\n# Tiny toy task: learn that after [START, A, B] the next token is X\n# and after [START, B, A] the next token is Y\n# The tokens are the same; only the order determines what comes next\n\n# Token IDs: START=0, A=1, B=2, X=3, Y=4\nvocab_size = 5\nemb_dim    = 4\n\n# Training data: (input_sequence, target)\n# Order A,B → predict X\n# Order B,A → predict Y\ntraining_data = [\n    ([0, 1, 2], 3),   # START A B → X\n    ([0, 2, 1], 4),   # START B A → Y\n] * 100   # repeat 100 times\n\nX_data = torch.tensor([d[0] for d in training_data])\ny_data = torch.tensor([d[1] for d in training_data])\n\n\nclass BagOfWordsModel(nn.Module):\n    \"\"\"Sums embeddings — completely destroys order information.\"\"\"\n    def __init__(self):\n        super().__init__()\n        self.emb = nn.Embedding(vocab_size, emb_dim)\n        self.fc  = nn.Linear(emb_dim, vocab_size)\n\n    def forward(self, token_ids):\n        # Sum all token embeddings — order is lost\n        # [0,1,2] and [0,2,1] produce EXACTLY the same representation\n        summed = self.emb(token_ids).sum(dim=1)\n        return self.fc(summed)\n\n\n# Train bag-of-words model\nbow_model = BagOfWordsModel()\noptimizer = torch.optim.Adam(bow_model.parameters(), lr=0.01)\n\nfor epoch in range(200):\n    logits = bow_model(X_data)\n    loss   = F.cross_entropy(logits, y_data)\n    optimizer.zero_grad()\n    loss.backward()\n    optimizer.step()\n\n# Evaluate\nbow_model.eval()\nwith torch.no_grad():\n    preds = bow_model(X_data).argmax(dim=1)\nacc = (preds == y_data).float().mean().item()\n\nprint(f'Bag-of-words model accuracy: {acc:.1%}')\nprint('Cannot exceed 50% — [0,1,2] and [0,2,1] look identical to this model.')\nprint('It is essentially flipping a coin.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Bag-of-words model accuracy: 50.0%\nCannot exceed 50% — [0,1,2] and [0,2,1] look identical to this model.\nIt is essentially flipping a coin."
+        }
+      ]
+    },
+    {
+      "id": "cell-ordered-model",
+      "type": "code",
+      "source": "class PositionAwareModel(nn.Module):\n    \"\"\"Concatenates embeddings — preserves position information.\"\"\"\n    def __init__(self, seq_len=3):\n        super().__init__()\n        self.emb = nn.Embedding(vocab_size, emb_dim)\n        # Input: seq_len tokens × emb_dim each, concatenated\n        self.fc  = nn.Linear(seq_len * emb_dim, vocab_size)\n\n    def forward(self, token_ids):\n        # Concatenate all token embeddings in order — order is preserved\n        # [0,1,2] and [0,2,1] produce DIFFERENT representations\n        flat = self.emb(token_ids).view(token_ids.shape[0], -1)\n        return self.fc(flat)\n\n\n# Train position-aware model\npos_model = PositionAwareModel(seq_len=3)\noptimizer = torch.optim.Adam(pos_model.parameters(), lr=0.01)\n\nfor epoch in range(200):\n    logits = pos_model(X_data)\n    loss   = F.cross_entropy(logits, y_data)\n    optimizer.zero_grad()\n    loss.backward()\n    optimizer.step()\n\n# Evaluate\npos_model.eval()\nwith torch.no_grad():\n    preds = pos_model(X_data).argmax(dim=1)\nacc = (preds == y_data).float().mean().item()\n\nprint(f'Position-aware model accuracy: {acc:.1%}')\nprint('Can reach 100% — it sees the different orderings as distinct inputs.')\nprint()\nprint('But this model is hardwired for seq_len=3.')\nprint('A 4-token input would crash it.')\nprint('This is the fixed-length problem — now we need a better solution.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Position-aware model accuracy: 100.0%\nCan reach 100% — it sees the different orderings as distinct inputs.\n\nBut this model is hardwired for seq_len=3.\nA 4-token input would crash it.\nThis is the fixed-length problem — now we need a better solution."
+        }
+      ]
+    }
+  ]
+}
+```
+
+The bag-of-words model is stuck at 50% — it sees [A, B] and [B, A] as identical. The position-aware model reaches 100%, but only for sequences of exactly three tokens. The fundamental tension remains: you need order, but you also need flexibility.
+
+---
+
+## The Key Insight: Process Tokens One at a Time
+
+The way out of this corner is to stop thinking about "a sentence as one big fixed-size input" and start thinking about "a sequence of decisions made one step at a time."
+
+Instead of feeding all tokens simultaneously, read them one at a time — left to right, in order. At each step, the network has access to the current token *and* a running summary of everything it's seen so far. This running summary is the **hidden state**.
+
+```
+Step 1: see "The"  →  update hidden state  →  output (predict next)
+Step 2: see "cat"  →  update hidden state  →  output (predict next)
+Step 3: see "sat"  →  update hidden state  →  output (predict next)
+...
+```
+
+The same network weights apply at every step. The hidden state carries forward what matters from earlier steps. Variable-length sequences work naturally — you just stop when the sequence ends.
+
+This is the design principle behind Recurrent Neural Networks, which is exactly where the next chapter picks up.
+
+---
+
+## Quick Recap
+
+- Feed-forward networks process all inputs simultaneously and independently — they have no notion of order.
+- Language is deeply sequential: "Dog bites man" ≠ "Man bites dog."
+- A naïve fix (concatenate embeddings in order) fails on two counts: **fixed length** and **no weight sharing across positions**.
+- Meaningful language tasks require **long-range dependencies** — information from many tokens back must influence the current prediction.
+- A viable sequence model needs: variable-length handling, position sensitivity, and long-range memory.
+- The key architectural insight: **process tokens one at a time, in order, with the same weights at every step, maintaining a running hidden state** that accumulates context.
+
+That's the recurrent neural network. Let's see exactly how it works — and where it runs into trouble.

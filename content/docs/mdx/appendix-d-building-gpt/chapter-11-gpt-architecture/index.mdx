@@ -1,54 +1,193 @@
 ---
 title: 11. GPT Architecture
-lastUpdatedDate: '2026-08-08'
+lastUpdatedDate: '2026-08-10'
 ---
 
 # 11. GPT Architecture
 
-## Decoder-Only Transformer
+GPT stands for Generative Pre-trained Transformer. The architecture is simpler than you might expect: it's just transformer blocks stacked on top of each other, with token embeddings at the input and a linear projection to vocabulary size at the output. No encoder. No cross-attention. Just decoder blocks all the way.
 
-GPT uses a **decoder-only transformer**: just decoder blocks stacked together, no separate encoder.
+That simplicity is the point. The decoder-only design is what makes GPT a language model — a machine that, given some tokens, predicts the next one.
 
-Key insight: A decoder-only transformer can generate language if trained to predict the next token.
+---
 
-## The Pipeline
+## What "Decoder-Only" Actually Means
+
+The original transformer (Vaswani et al., 2017) had two halves: an **encoder** that reads a source sequence and a **decoder** that generates a target sequence while attending to the encoder's output. That architecture was designed for machine translation: read an English sentence (encoder), generate a French sentence (decoder).
+
+GPT throws out the encoder entirely. There's no source sequence to read. The model just takes a sequence of tokens and predicts what comes next. This is all you need for language modeling.
+
+The "decoder" name is kept because GPT uses causal (masked) self-attention — the same attention mask used in the original decoder to prevent positions from attending to future positions. Each token can only see the tokens that came before it.
 
 ```
-"Hello world" 
-  ↓ tokenize
-[15496, 2134]
-  ↓ embedding lookup
-Embeddings (768D each)
-  ↓ add positional encoding
-  ↓ 96 transformer blocks
-Refined representations
-  ↓ project to vocabulary
-Logits (50,000 dimensions)
-  ↓ softmax
-Probabilities (sum to 1)
+GPT / Decoder-Only Architecture
+
+           Token IDs
+               ↓
+     Token Embedding (vocab_size × d_model)
+               +
+   Positional Encoding (seq_len × d_model)
+               ↓
+     ┌─────────────────────┐
+     │   Transformer Block  │  ← repeated N times
+     │  ┌───────────────┐  │
+     │  │ LayerNorm      │  │
+     │  │ Causal MHA     │  │  ← can only attend to current and previous positions
+     │  │ + residual     │  │
+     │  ├───────────────┤  │
+     │  │ LayerNorm      │  │
+     │  │ FeedForward    │  │
+     │  │ + residual     │  │
+     │  └───────────────┘  │
+     └─────────────────────┘
+               ↓
+         Final LayerNorm
+               ↓
+        LM Head (d_model → vocab_size)
+               ↓
+       Logits (one score per token in vocabulary)
 ```
 
-## How GPT Predicts the Next Token
+Compare this to the full encoder-decoder:
 
-1. Processes all previous tokens
-2. Uses attention to determine relevant tokens
-3. Combines information to estimate next token probability
-4. Returns probability distribution
+```
+Encoder-Decoder (original transformer, T5)
 
-## Why This Works at Scale
+Source tokens → Encoder → Encoder output (full bidirectional attention)
+                                  ↓
+Target tokens → Decoder → Cross-Attention reads encoder output
+                        → Causal self-attention for generation
+                        → Generate next target token
+```
 
-**Scaling discovery**: Large models trained on next-token prediction learn rich representations.
+The encoder can see all positions in both directions (bidirectional attention). The GPT decoder can only see positions to its left (causal attention). That's the core structural difference.
 
-With billions of parameters and trillions of tokens:
-- Learns syntax, grammar
-- Learns factual information
-- Learns reasoning patterns
-- **Emerges**: Capabilities that were never explicitly programmed
+---
 
-## The Decoder Mask
+## Why Decoder-Only Predicts Text
 
-During generation, use **causal masking**:
-- Can attend to: tokens 1-99
-- Cannot attend to: tokens 101+
+Here's the key insight: **next-token prediction is all you need to learn language**.
 
-Prevents cheating by looking at future.
+If a model can accurately predict the next token given all previous tokens, it must have learned:
+- Grammar (some words are grammatically valid continuations, others aren't)
+- Facts (after "The capital of France is", "Paris" is far more likely than "banana")
+- Reasoning patterns (if-then structures, logical continuations)
+- Style and tone
+
+The causal mask enforces this. At training time, position 5 can only see positions 1-4. It never cheats by looking at position 6. At inference time, we really are generating left to right — there are no future tokens to see.
+
+---
+
+## The Full Data Flow
+
+Let's trace a concrete example: the string `"The cat sat"` passed through a small GPT.
+
+```
+Input text:      "The cat sat"
+                      ↓  tokenize (GPT-2 BPE)
+Token IDs:       [464, 3797, 3332]
+                      ↓  embedding lookup (each ID → 768-dim vector)
+Token embeddings: shape [1, 3, 768]
+                      ↓  + positional encoding (learned position vectors)
+x:               shape [1, 3, 768]   ← each token now knows its position
+                      ↓  12 × transformer block (shape never changes)
+x:               shape [1, 3, 768]   ← same shape in, same shape out
+                      ↓  final LayerNorm
+                      ↓  LM head: 768 → 50257
+Logits:          shape [1, 3, 50257] ← 50257 scores per position
+                      ↓  softmax (optional — just for visualization)
+Probs:           shape [1, 3, 50257] ← probability distribution per position
+
+Position 0 logits → probability over next token given "The"
+Position 1 logits → probability over next token given "The cat"
+Position 2 logits → probability over next token given "The cat sat"
+```
+
+During training, we compare position 0's prediction to the actual token at position 1, position 1's prediction to position 2, and so on. This is the "shift by one" structure — one forward pass generates training signal for every position in the sequence simultaneously.
+
+---
+
+## GPT Config and Parameter Counts
+
+```notebook
+{
+  "title": "GPT config objects and parameter counts — from GPT-2 small to GPT-3",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-gpt-configs",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\n# GPT model configurations — historical reference points\n# These are the published hyperparameters for each model\n\nGPT_CONFIGS = {\n    'GPT-2 small': {\n        'vocab_size':    50257,\n        'context_length': 1024,\n        'd_model':         768,\n        'n_heads':          12,\n        'n_layers':         12,\n        'description': '117M params — released 2019, fits on a consumer GPU'\n    },\n    'GPT-2 medium': {\n        'vocab_size':    50257,\n        'context_length': 1024,\n        'd_model':        1024,\n        'n_heads':          16,\n        'n_layers':         24,\n        'description': '345M params — 2× more layers, wider hidden dim'\n    },\n    'GPT-2 large': {\n        'vocab_size':    50257,\n        'context_length': 1024,\n        'd_model':        1280,\n        'n_heads':          20,\n        'n_layers':         36,\n        'description': '774M params'\n    },\n    'GPT-2 XL': {\n        'vocab_size':    50257,\n        'context_length': 1024,\n        'd_model':        1600,\n        'n_heads':          25,\n        'n_layers':         48,\n        'description': '1.5B params — largest GPT-2 variant'\n    },\n    'GPT-3 small': {\n        'vocab_size':    50257,\n        'context_length': 2048,\n        'd_model':         768,\n        'n_heads':          12,\n        'n_layers':         12,\n        'description': '125M params — same shape as GPT-2 small, longer context'\n    },\n    'GPT-3 6.7B': {\n        'vocab_size':    50257,\n        'context_length': 2048,\n        'd_model':        4096,\n        'n_heads':          32,\n        'n_layers':         32,\n        'description': '6.7B params — medium-scale GPT-3'\n    },\n    'GPT-3 175B': {\n        'vocab_size':    50257,\n        'context_length': 2048,\n        'd_model':       12288,\n        'n_heads':          96,\n        'n_layers':         96,\n        'description': '175B params — the original \"GPT-3\" everyone talks about'\n    },\n}\n\ndef count_params(cfg):\n    \"\"\"Estimate parameter count from config (excludes biases for simplicity).\"\"\"\n    V = cfg['vocab_size']\n    C = cfg['context_length']\n    D = cfg['d_model']\n    H = cfg['n_heads']\n    L = cfg['n_layers']\n    d_ff = 4 * D\n    \n    # Embeddings\n    tok_emb = V * D\n    pos_emb = C * D\n    \n    # Per transformer block:\n    # Attention: W_Q, W_K, W_V (each D×D) + W_O (D×D) = 4D²\n    attn = 4 * D * D\n    # FFN: W1 (D → 4D) + W2 (4D → D) = 8D²\n    ffn = 2 * D * d_ff\n    # LayerNorms (2 per block, each has 2D params)\n    lns = 2 * 2 * D\n    block = attn + ffn + lns\n    \n    # Final LayerNorm\n    final_ln = 2 * D\n    \n    # LM head is weight-tied with token embedding → 0 extra params\n    total = tok_emb + pos_emb + L * block + final_ln\n    return total\n\nprint(f'{'Model':<20} {'d_model':>8} {'n_heads':>8} {'n_layers':>9} {'Params':>14}  Description')\nprint('─' * 90)\nfor name, cfg in GPT_CONFIGS.items():\n    p = count_params(cfg)\n    if p >= 1e9:\n        p_str = f'{p/1e9:.1f}B'\n    elif p >= 1e6:\n        p_str = f'{p/1e6:.0f}M'\n    else:\n        p_str = f'{p:,}'\n    print(f'{name:<20} {cfg[\"d_model\"]:>8} {cfg[\"n_heads\"]:>8} {cfg[\"n_layers\"]:>9} {p_str:>14}  {cfg[\"description\"]}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Model                d_model   n_heads   n_layers         Params  Description\n──────────────────────────────────────────────────────────────────────────────────────────\nGPT-2 small              768      12         12            124M  117M params — released 2019, fits on a consumer GPU\nGPT-2 medium            1024      16         24            354M  345M params — 2× more layers, wider hidden dim\nGPT-2 large             1280      20         36            812M  774M params\nGPT-2 XL                1600      25         48           1.6B  1.5B params — largest GPT-2 variant\nGPT-3 small              768      12         12            124M  125M params — same shape as GPT-2 small, longer context\nGPT-3 6.7B              4096      32         32            6.7B  6.7B params — medium-scale GPT-3\nGPT-3 175B             12288      96         96            175B  175B params — the original \"GPT-3\" everyone talks about"
+        }
+      ]
+    },
+    {
+      "id": "cell-gpt2-breakdown",
+      "type": "text",
+      "source": "Notice the pattern: d_model, n_heads, and n_layers all scale together. You don't just make the model deeper (more layers) — you also make it wider (larger d_model). GPT-3 175B has 8× the layers and 16× the hidden dimension of GPT-2 small, giving it roughly 1,400× more parameters.\n\nAlso notice: the LM head has 0 extra parameters. It reuses the token embedding matrix (transposed) — a technique called **weight tying**. The embedding that maps tokens to vectors and the projection that maps vectors back to token scores are the same matrix. This saves ~40M parameters in GPT-2 small and makes intuitive sense: the same concepts that identify a token as input should identify it as a likely output."
+    },
+    {
+      "id": "cell-param-breakdown",
+      "type": "code",
+      "source": "# Detailed breakdown for GPT-2 small\nD = 768\nn_layers = 12\nvocab = 50257\nctx = 1024\nd_ff = 4 * D  # 3072\n\nprint('GPT-2 small: where do the parameters live?')\nprint()\n\ntok_emb = vocab * D\npos_emb = ctx * D\nprint(f'Token embedding:     {tok_emb:>12,}  ({vocab} tokens × {D} dims)')\nprint(f'Position embedding:  {pos_emb:>12,}  ({ctx} positions × {D} dims)')\nprint()\n\nattn_per_block = 4 * D * D   # QKV + output projections\nffn_per_block  = 2 * D * d_ff  # W1 + W2\nln_per_block   = 2 * 2 * D   # 2 LayerNorms × 2 params each\nblock_total    = attn_per_block + ffn_per_block + ln_per_block\n\nprint(f'Per transformer block:')\nprint(f'  Attention (Q,K,V,O): {attn_per_block:>10,}  (4 × {D}² = 4 × {D*D:,})')\nprint(f'  Feed-forward:        {ffn_per_block:>10,}  (D×4D + 4D×D = 2 × {D}×{d_ff})')\nprint(f'  LayerNorms (×2):     {ln_per_block:>10,}  (2 norms × 2 params each × {D} dims)')\nprint(f'  Block total:         {block_total:>10,}')\nprint(f'× {n_layers} layers:          {n_layers * block_total:>10,}')\nprint()\nprint(f'Final LayerNorm:     {2*D:>12,}')\nprint(f'LM Head (weight-tied): {0:>10,}  (reuses token embedding)')\nprint()\ntotal = tok_emb + pos_emb + n_layers * block_total + 2*D\nprint(f'TOTAL:               {total:>12,}  ({total/1e6:.1f}M)')\nprint()\nprint('Breakdown by type:')\nprint(f'  Embeddings: {(tok_emb + pos_emb)/total*100:.1f}%')\nprint(f'  Attention:  {(n_layers * attn_per_block)/total*100:.1f}%')\nprint(f'  FFN:        {(n_layers * ffn_per_block)/total*100:.1f}%')\nprint(f'  LayerNorms: {(n_layers * ln_per_block + 2*D)/total*100:.1f}%')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "GPT-2 small: where do the parameters live?\n\nToken embedding:       38,597,376  (50257 tokens × 768 dims)\nPosition embedding:       786,432  (1024 positions × 768 dims)\n\nPer transformer block:\n  Attention (Q,K,V,O):  2,359,296  (4 × 768² = 4 × 589,824)\n  Feed-forward:         4,718,592  (D×4D + 4D×D = 2 × 768×3072)\n  LayerNorms (×2):          3,072  (2 norms × 2 params each × 768 dims)\n  Block total:          7,080,960\n× 12 layers:           84,971,520\n\nFinal LayerNorm:            1,536\nLM Head (weight-tied):          0  (reuses token embedding)\n\nTOTAL:                124,356,864  (124.4M)\n\nBreakdown by type:\n  Embeddings: 31.7%\n  Attention:  22.7%\n  FFN:        45.5%\n  LayerNorms:  0.0%"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The FFN holds nearly half the parameters. This isn't a surprise — each transformer block has a feed-forward network with 8× the parameter count of the attention (4D² attention vs 8D² FFN). Research by Geva et al. (2021) suggests these FFN parameters function as "key-value memories" that store factual associations — the FFN is where much of a model's world knowledge lives.
+
+---
+
+## The Causal Mask in Detail
+
+The causal mask is what enforces the "can only look backward" property. It's a lower-triangular matrix applied to the attention scores before softmax.
+
+```
+Causal mask for sequence length 4:
+
+       pos 0  pos 1  pos 2  pos 3
+pos 0 [  1      0      0      0  ]   ← position 0 sees only itself
+pos 1 [  1      1      0      0  ]   ← position 1 sees positions 0, 1
+pos 2 [  1      1      1      0  ]   ← position 2 sees positions 0, 1, 2
+pos 3 [  1      1      1      1  ]   ← position 3 sees all positions
+
+Values of 0 become -∞ before softmax → probability 0 after softmax
+```
+
+This is efficient: you can train on a sequence of 1024 tokens and get 1024 prediction targets simultaneously, all from one forward pass. Position 0 predicts position 1. Position 1 predicts position 2. And so on. No cheating — the mask guarantees position `i` only uses information from positions `0..i`.
+
+---
+
+## Why This Architecture Became Dominant
+
+There are three reasons the decoder-only architecture took over:
+
+**1. Simplicity scales well.** The original encoder-decoder had two separate sets of parameters and cross-attention between them. A decoder-only model is one unified stack — easier to scale, easier to reason about, and (empirically) equally capable when scaled up.
+
+**2. Pretraining is a single objective.** Next-token prediction requires no labeled data, no human annotations, no task-specific design. You just throw text at it. The internet has roughly 100 trillion tokens of text. That's your training data.
+
+**3. Emergent generalization.** A model trained only to predict the next token turns out to be able to answer questions, write code, translate text, and summarize documents — without any task-specific training. This emerged from scale, not from explicit programming.
+
+GPT-2 (2019) demonstrated this with a 1.5B parameter model. GPT-3 (2020) showed it dramatically at 175B. Every major LLM since — LLaMA, Mistral, Claude, Gemini — uses this same decoder-only architecture.
+
+---
+
+## Quick Recap
+
+- **Decoder-only** means causal (masked) self-attention with no encoder. Each token can only attend to previous tokens.
+- The data flow is: token IDs → embeddings + positional encoding → N transformer blocks → final LayerNorm → LM head → logits.
+- **Logits** are raw scores over the vocabulary. Softmax converts them to probabilities. During training, we use the logits directly in cross-entropy loss.
+- The **LM head is weight-tied** with the token embedding matrix — no extra parameters.
+- GPT-3 175B uses the same architecture as GPT-2 small, just with 96 layers, d_model=12288, and n_heads=96 instead of 12/768/12.
+- The FFN holds ~45% of all parameters and is where most of the model's "knowledge" appears to be stored.

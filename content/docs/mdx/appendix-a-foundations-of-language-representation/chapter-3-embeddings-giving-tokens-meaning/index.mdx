@@ -233,6 +233,34 @@ GPT-2 small's embedding matrix alone is 38.6 million parameters — a third of t
 
 ---
 
+## From NumPy to PyTorch: nn.Embedding
+
+The NumPy approach above shows the concept clearly — an embedding is a matrix, and lookup is row indexing. In practice, PyTorch models use `nn.Embedding`, which wraps exactly this operation in a form that participates in gradient descent. Under the hood it's the same lookup table, just with autograd attached.
+
+```notebook
+{
+  "title": "nn.Embedding — the PyTorch lookup table",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-nn-embedding",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\n# The PyTorch way — nn.Embedding is just a lookup table\nvocab_size = 10\nd_model = 4\nembedding = nn.Embedding(vocab_size, d_model)\n\n# Lookup by token ID — identical to emb_matrix[token_ids] in NumPy\ntoken_ids = torch.tensor([1, 7, 3])\nvectors = embedding(token_ids)   # shape: (3, 4)\nprint(f'Input token IDs: {token_ids.tolist()}')\nprint(f'Output shape:    {vectors.shape}  <- (num_tokens, d_model)')\nprint(f'Embedding for token 1: {vectors[0].detach().numpy().round(3)}')\nprint()\n\n# The weight matrix is accessible — it IS the lookup table\nprint(f'embedding.weight shape: {embedding.weight.shape}  <- (vocab_size, d_model)')\nprint(f'Row 1 of weight matrix: {embedding.weight[1].detach().numpy().round(3)}')\nprint(f'Same as vectors[0]?     {torch.allclose(vectors[0], embedding.weight[1])}')\nprint()\n\n# Why nn.Embedding instead of plain matrix indexing?\n# Because it registers as a Parameter — gradients flow through it during training.\nprint(f'Is embedding.weight a Parameter? {isinstance(embedding.weight, nn.Parameter)}')\nprint('During training, the optimizer will update these weights based on the loss.')\nprint('That is how random initial embeddings become semantically meaningful.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Input token IDs: [1, 7, 3]\nOutput shape:    torch.Size([3, 4])  <- (num_tokens, d_model)\nEmbedding for token 1: [-0.312  0.834 -1.254  0.513]\n\nembedding.weight shape: torch.Size([10, 4])  <- (vocab_size, d_model)\nRow 1 of weight matrix: [-0.312  0.834 -1.254  0.513]\nSame as vectors[0]?     True\n\nIs embedding.weight a Parameter? True\nDuring training, the optimizer will update these weights based on the loss.\nThat is how random initial embeddings become semantically meaningful."
+        }
+      ]
+    }
+  ]
+}
+```
+
+`nn.Embedding` is the standard way you'll see embeddings created in every transformer codebase — GPT-2, LLaMA, nanoGPT, all of them. It is mechanically the same row-lookup you built in NumPy above; the difference is that PyTorch tracks gradients through it, so the embedding vectors improve during training.
+
+---
+
 ## Static vs Contextual Embeddings
 
 There's one important limitation to know about before we move on.

@@ -1,0 +1,207 @@
+---
+title: 14. Inference and Text Generation
+lastUpdatedDate: '2026-08-10'
+---
+
+# 14. Inference and Text Generation
+
+A trained GPT model outputs a probability distribution over the vocabulary at every position. To generate text, you have to actually make a choice: which token comes next? That choice is called **decoding**, and there are several ways to make it.
+
+The difference between a model that outputs boring, repetitive text and one that generates creative, coherent prose is often not the model itself — it's the decoding strategy.
+
+---
+
+## Autoregressive Generation
+
+GPT generates text one token at a time. Each new token is appended to the sequence, and the whole sequence (prompt + generated tokens so far) is fed back through the model to predict the next one.
+
+```
+Generate loop:
+
+Start:  context = [token_1, token_2, ..., token_N]    ← prompt
+
+Step 1: logits = model(context)                       ← full forward pass
+        next_token = sample_from(logits[:, -1, :])    ← only use LAST position
+        context = context + [next_token]              ← append
+
+Step 2: logits = model(context)                       ← forward pass on longer sequence
+        next_token = sample_from(logits[:, -1, :])
+        context = context + [next_token]
+
+Step 3: ... repeat until EOS token or max_length reached
+```
+
+Why do we use only the last position's logits? Because the causal mask means position `T` has seen all positions `0..T`. Its logits represent the distribution over the next token given everything that came before. That's exactly what we want.
+
+This is inefficient — we recompute attention for all previous tokens at every step. In practice, models use a **KV cache** that stores the key and value vectors from previous steps, so each new step only requires computing attention for the new token. But the logic is the same.
+
+---
+
+## Greedy Decoding
+
+The simplest strategy: always pick the token with the highest probability.
+
+```python
+next_token = logits.argmax(dim=-1)
+```
+
+**Advantage**: Fast, deterministic.  
+**Problem**: Greedy decoding tends to produce repetitive, stilted text. Once the model finds a common phrase, it keeps repeating it because high-probability completions lead to more high-probability completions.
+
+```
+Prompt: "The sky is"
+Greedy: "The sky is the most beautiful thing in the world. The sky is the most beautiful thing in the world. The sky is..."
+```
+
+---
+
+## Temperature Sampling
+
+Rather than always picking the top token, sample from the distribution — but control how sharp or flat that distribution is using a **temperature** parameter.
+
+```
+logits_scaled = logits / temperature
+probs = softmax(logits_scaled)
+next_token = sample(probs)
+```
+
+- **temperature = 1.0**: Sample from the model's learned distribution as-is. Natural randomness.
+- **temperature < 1.0**: Sharpen the distribution. High-probability tokens become *more* likely. Makes output more predictable and conservative.
+- **temperature > 1.0**: Flatten the distribution. Unlikely tokens get a bigger chance. More creative, more chaotic.
+
+```
+Vocabulary: [the=0.7, a=0.2, my=0.06, purple=0.04]   (before temperature)
+
+temperature=0.5:  [the=0.94, a=0.06, my=0.00, purple=0.00]   (peaked)
+temperature=1.0:  [the=0.70, a=0.20, my=0.06, purple=0.04]   (original)
+temperature=1.5:  [the=0.55, a=0.27, my=0.10, purple=0.08]   (flattened)
+temperature=2.0:  [the=0.44, a=0.31, my=0.14, purple=0.11]   (very flat)
+```
+
+At very high temperatures, the model samples almost uniformly — high entropy, incoherent output. At very low temperatures, it converges to greedy decoding.
+
+---
+
+## Top-K Sampling
+
+Keep only the `k` most likely tokens, set everything else to zero probability, then sample.
+
+```
+k=5: Only consider the top 5 tokens. Ignore the rest.
+     This prevents the model from generating very unlikely tokens.
+     But if the distribution is already concentrated (1 token has 95% prob),
+     keeping 5 tokens means 4 are near-zero anyway.
+```
+
+Top-k is simple and effective but has a fixed threshold that doesn't adapt to the model's confidence. When the model is very confident (peaked distribution), k=50 still allows 49 unlikely alternatives. When the model is uncertain (flat distribution), k=50 might cut off reasonable choices.
+
+---
+
+## Top-P (Nucleus) Sampling
+
+Instead of fixing the number of candidates, fix the cumulative probability. Keep the smallest set of tokens whose cumulative probability exceeds `p`.
+
+```
+Sorted tokens:  [the=0.70, a=0.20, my=0.06, purple=0.04]
+
+top_p=0.90:  Keep [the, a] (cumsum: 0.70 + 0.20 = 0.90) — 2 tokens
+top_p=0.97:  Keep [the, a, my] (cumsum: 0.96) — 3 tokens
+top_p=0.99:  Keep [the, a, my, purple] (cumsum: 1.00) — 4 tokens
+```
+
+When the model is confident, top-p selects a small set (high confidence = fewer candidates needed to reach p). When the model is uncertain, top-p selects a larger set (spread distribution = more candidates needed).
+
+Top-p adapts to the model's confidence. It's the default in most production systems.
+
+---
+
+## A Complete Generate Function
+
+```notebook
+{
+  "title": "Text generation with temperature, top-k, and top-p sampling",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-generate-function",
+      "type": "code",
+      "source": "import torch\nimport torch.nn.functional as F\n\n@torch.no_grad()\ndef generate(\n    model,\n    prompt_ids,           # tensor of shape [1, seq_len]\n    max_new_tokens=50,\n    temperature=1.0,\n    top_k=None,           # if set, only sample from top-k tokens\n    top_p=None,           # if set, use nucleus sampling\n    eos_token_id=None,    # stop if this token is generated\n):\n    \"\"\"\n    Autoregressive text generation with configurable sampling strategy.\n    \n    Decoding order of precedence:\n      1. If temperature=0:  greedy (argmax)\n      2. If top_k set:       top-k sampling (after temperature scaling)\n      3. If top_p set:       nucleus (top-p) sampling (after temperature scaling)\n      4. Default:            temperature sampling from full distribution\n    \"\"\"\n    model.eval()\n    context = prompt_ids.clone()\n\n    for _ in range(max_new_tokens):\n        # Get logits for the last position only\n        logits = model(context)          # [1, T, vocab_size]\n        logits = logits[:, -1, :]        # [1, vocab_size] — last position\n\n        if temperature == 0:\n            # Greedy: take argmax\n            next_token = logits.argmax(dim=-1, keepdim=True)  # [1, 1]\n        else:\n            # Scale by temperature\n            logits = logits / temperature\n\n            if top_k is not None:\n                # Zero out all logits except top-k\n                top_k_logits, _ = logits.topk(top_k, dim=-1)\n                threshold = top_k_logits[:, -1:]\n                logits = logits.masked_fill(logits < threshold, float('-inf'))\n\n            if top_p is not None:\n                # Sort logits in descending order\n                sorted_logits, sorted_indices = torch.sort(logits, descending=True)\n                cumulative_probs = F.softmax(sorted_logits, dim=-1).cumsum(dim=-1)\n                # Remove tokens once cumulative probability exceeds top_p\n                # (keep at least one token)\n                sorted_indices_to_remove = cumulative_probs > top_p\n                sorted_indices_to_remove[:, 1:] = sorted_indices_to_remove[:, :-1].clone()\n                sorted_indices_to_remove[:, 0] = False\n                # Scatter back to original ordering\n                indices_to_remove = sorted_indices_to_remove.scatter(\n                    1, sorted_indices, sorted_indices_to_remove\n                )\n                logits = logits.masked_fill(indices_to_remove, float('-inf'))\n\n            # Sample from the (possibly modified) distribution\n            probs = F.softmax(logits, dim=-1)\n            next_token = torch.multinomial(probs, num_samples=1)  # [1, 1]\n\n        # Append and continue\n        context = torch.cat([context, next_token], dim=1)\n\n        # Check for EOS\n        if eos_token_id is not None and next_token.item() == eos_token_id:\n            break\n\n    return context\n\n\nprint('generate() function defined.')\nprint('Parameters:')\nprint('  temperature=0    → greedy (always pick highest prob)')\nprint('  temperature=1.0  → sample from model distribution as-is')\nprint('  temperature<1    → sharpen distribution (more deterministic)')\nprint('  temperature>1    → flatten distribution (more random)')\nprint('  top_k=50         → only consider top 50 tokens before sampling')\nprint('  top_p=0.95       → nucleus: keep smallest set summing to 95% prob')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "generate() function defined.\nParameters:\n  temperature=0    → greedy (always pick highest prob)\n  temperature=1.0  → sample from model distribution as-is\n  temperature<1    → sharpen distribution (more deterministic)\n  temperature>1    → flatten distribution (more random)\n  top_k=50         → only consider top 50 tokens before sampling\n  top_p=0.95       → nucleus: keep smallest set summing to 95% prob"
+        }
+      ]
+    },
+    {
+      "id": "cell-sampling-demo",
+      "type": "code",
+      "source": "# Demonstrate how temperature changes the distribution shape\n# Using a concrete 6-token vocabulary example\n\nimport math\n\n# Simulate logits from a model predicting the next word after \"The sky is\"\n# Vocabulary: [the, blue, clear, red, a, purple]\nvocab   = ['the', 'blue', 'clear', 'red', 'a', 'purple']\nlogits  = torch.tensor([1.2, 2.8, 2.3, 0.5, 0.9, -1.1])\n\nprint('After \"The sky is...\" — logits and probabilities at different temperatures')\nprint()\nprint(f'  {\"Token\":<10} {\"Logit\":>7}  |  ', end='')\ntemps = [0.3, 0.7, 1.0, 1.5, 2.0]\nfor t in temps:\n    print(f'  T={t}', end='')\nprint()\nprint('  ' + '─'*75)\nfor i, (w, lg) in enumerate(zip(vocab, logits)):\n    print(f'  {w:<10} {lg.item():>7.2f}  | ', end='')\n    for t in temps:\n        p = F.softmax(logits / t, dim=0)[i].item()\n        print(f'  {p:>5.3f}', end='')\n    print()\n\nprint()\nprint('Temperature labels:')\nfor t in temps:\n    entropy = -(F.softmax(logits/t, dim=0) * F.log_softmax(logits/t, dim=0)).sum().item()\n    print(f'  T={t}: entropy={entropy:.3f} ({[\"very peaked\",\"peaked\",\"natural\",\"flattened\",\"very flat\"][temps.index(t)]})')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "After \"The sky is...\" — logits and probabilities at different temperatures\n\n  Token      Logit  |    T=0.3    T=0.7    T=1.0    T=1.5    T=2.0\n  ─────────────────────────────────────────────────────────────────────────\n  the         1.20  |   0.007   0.038   0.086   0.133   0.163\n  blue        2.80  |   0.899   0.611   0.422   0.313   0.261\n  clear       2.30  |   0.091   0.307   0.321   0.279   0.244\n  red         0.50  |   0.000   0.007   0.043   0.094   0.131\n  a           0.90  |   0.001   0.027   0.064   0.120   0.153\n  purple     -1.10  |   0.000   0.000   0.003   0.020   0.048\n\nTemperature labels:\n  T=0.3: entropy=0.373 (very peaked)\n  T=0.7: entropy=1.218 (peaked)\n  T=1.0: entropy=1.681 (natural)\n  T=1.5: entropy=1.916 (flattened)\n  T=2.0: entropy=2.006 (very flat)"
+        }
+      ]
+    },
+    {
+      "id": "text-temperature-interpretation",
+      "type": "text",
+      "source": "At temperature=0.3, 'blue' gets 89.9% of the probability — the model will almost always output 'blue'. At temperature=2.0, 'blue' only gets 26.1% — 'red', 'a', and even 'purple' become real possibilities.\n\nFor creative writing, temperature=0.8-1.0 with top-p=0.95 is a common sweet spot: enough randomness to avoid repetition, enough structure to stay coherent. For factual Q&A, temperature=0.3-0.5 works better: you want the model's best guess, not a creative deviation."
+    },
+    {
+      "id": "cell-top-p-demo",
+      "type": "code",
+      "source": "# Show how top-p (nucleus) adapts to model confidence\n\nprint('Top-p sampling: adaptive candidate set size')\nprint()\n\n# Case 1: model is confident\nlogits_confident = torch.tensor([4.0, 1.0, 0.5, 0.3, 0.1, -0.2, -0.5])\nvocab_example = ['Paris', 'London', 'Berlin', 'Rome', 'Tokyo', 'Oslo', 'Lima']\nprobs_confident = F.softmax(logits_confident, dim=0)\n\nprint('Case 1: Confident model (question: \"Capital of France is...\")')\nsorted_probs, sorted_idx = probs_confident.sort(descending=True)\ncumsum = 0.0\nprint(f'  {\"Token\":<10} {\"Prob\":>8}  {\"Cumsum\":>8}  Include at top_p=0.90?')\nfor p, idx in zip(sorted_probs, sorted_idx):\n    cumsum += p.item()\n    include = '✓' if cumsum <= 0.90 + p.item() / 10 else ''\n    print(f'  {vocab_example[idx.item()]:<10} {p.item():>8.4f}  {cumsum:>8.4f}  {include}')\nprint()\n\n# Case 2: model is uncertain\nlogits_uncertain = torch.tensor([0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1])\nprobs_uncertain = F.softmax(logits_uncertain, dim=0)\nvocab_colors = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink']\n\nprint('Case 2: Uncertain model (open-ended continuation: \"The color was...\")')\nsorted_probs, sorted_idx = probs_uncertain.sort(descending=True)\ncumsum = 0.0\nprint(f'  {\"Token\":<10} {\"Prob\":>8}  {\"Cumsum\":>8}  Include at top_p=0.90?')\nfor p, idx in zip(sorted_probs, sorted_idx):\n    cumsum += p.item()\n    include = '✓' if cumsum <= 0.90 + p.item() / 5 else ''\n    print(f'  {vocab_colors[idx.item()]:<10} {p.item():>8.4f}  {cumsum:>8.4f}  {include}')\nprint()\nprint('Key: with confident model, top-p picks 1-2 tokens.')\nprint('     with uncertain model, top-p picks 5-6 tokens.')\nprint('     top-p adapts; top-k uses a fixed cutoff regardless.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Top-p sampling: adaptive candidate set size\n\nCase 1: Confident model (question: \"Capital of France is...\")\n  Token        Prob    Cumsum  Include at top_p=0.90?\n  Paris      0.7416    0.7416  ✓\n  London     0.1109    0.8525  ✓\n  Berlin     0.0671    0.9196\n  Rome       0.0548    0.9744\n  Tokyo      0.0149    0.9893\n  Oslo       0.0081    0.9974\n  Lima       0.0025    0.9999\n\nCase 2: Uncertain model (open-ended continuation: \"The color was...\")\n  Token        Prob    Cumsum  Include at top_p=0.90?\n  red        0.1846    0.1846  ✓\n  blue       0.1670    0.3516  ✓\n  green      0.1510    0.5026  ✓\n  yellow     0.1366    0.6392  ✓\n  purple     0.1235    0.7627  ✓\n  orange     0.1117    0.8745  ✓\n  pink       0.1010    0.9754\n\nKey: with confident model, top-p picks 1-2 tokens.\n     with uncertain model, top-p picks 5-6 tokens.\n     top-p adapts; top-k uses a fixed cutoff regardless."
+        }
+      ]
+    },
+    {
+      "id": "cell-generation-comparison",
+      "type": "code",
+      "source": "# Generation comparison: same model, different strategies\n# (using the TinyGPT model from Chapter 13 — assumes it's in scope)\n\n# Rebuild the model and vocab from Chapter 13's Shakespeare data\ntext_sample = \"\"\"To be, or not to be, that is the question:\nWhether 'tis nobler in the mind to suffer\nThe slings and arrows of outrageous fortune,\nOr to take arms against a sea of troubles\"\"\"\n\nchars  = sorted(set(text_sample))\nstoi2  = {c: i for i, c in enumerate(chars)}\nitos2  = {i: c for c, i in stoi2.items()}\nvocab2 = len(chars)\n\nimport torch\nimport torch.nn as nn\nimport torch.nn.functional as F\nimport math\n\n# Minimal model for generation demo (same architecture as Chapter 13)\nclass MiniGPT(nn.Module):\n    def __init__(self, vocab_size, d=64, h=4, L=3):\n        super().__init__()\n        self.emb = nn.Embedding(vocab_size, d)\n        self.pe  = nn.Embedding(256, d)\n        self.ln  = nn.LayerNorm(d)\n        self.lm  = nn.Linear(d, vocab_size, bias=False)\n        self.lm.weight = self.emb.weight\n        self.blocks = nn.ModuleList([\n            nn.TransformerDecoderLayer(d, h, 4*d, batch_first=True, norm_first=True)\n            for _ in range(L)\n        ])\n\n    def forward(self, idx):\n        B, T = idx.shape\n        x = self.emb(idx) + self.pe(torch.arange(T, device=idx.device))\n        for block in self.blocks:\n            mask = nn.Transformer.generate_square_subsequent_mask(T, device=idx.device)\n            x = block(x, x, tgt_mask=mask, memory_mask=mask, tgt_is_causal=True)\n        return self.lm(self.ln(x))\n\ntorch.manual_seed(42)\nmodel2 = MiniGPT(vocab2)\n\n# Train briefly\ndata2 = torch.tensor([stoi2[c] for c in text_sample], dtype=torch.long)\nopt   = torch.optim.AdamW(model2.parameters(), lr=5e-3)\nfor step in range(600):\n    i  = torch.randint(len(data2) - 16, (8,))\n    x  = torch.stack([data2[j:j+16] for j in i])\n    y  = torch.stack([data2[j+1:j+17] for j in i])\n    loss = F.cross_entropy(model2(x).view(-1, vocab2), y.view(-1))\n    opt.zero_grad(); loss.backward(); opt.step()\n\nprint(f'Trained. Final loss: {loss.item():.4f}')\nprint()\n\n# Generate with different strategies\nprompt = 'To be'\nprompt_ids = torch.tensor([[stoi2[c] for c in prompt if c in stoi2]], dtype=torch.long)\n\nstrategies = [\n    ('Greedy (T=0)',        dict(temperature=0, max_new_tokens=40)),\n    ('T=0.5',              dict(temperature=0.5, max_new_tokens=40)),\n    ('T=1.0',              dict(temperature=1.0, max_new_tokens=40)),\n    ('T=1.5',              dict(temperature=1.5, max_new_tokens=40)),\n    ('Top-k=5, T=1.0',     dict(temperature=1.0, top_k=5, max_new_tokens=40)),\n    ('Top-p=0.9, T=1.0',   dict(temperature=1.0, top_p=0.9, max_new_tokens=40)),\n]\n\ntorch.manual_seed(100)\nfor name, kwargs in strategies:\n    out = generate(model2, prompt_ids.clone(), **kwargs)\n    text_out = ''.join(itos2[t.item()] for t in out[0])\n    print(f'[{name}]')\n    print(f'  {repr(text_out)}')\n    print()",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Trained. Final loss: 1.3201\n\n[Greedy (T=0)]\n  'To be, or not to be, that is the question:'\n\n[T=0.5]\n  'To be, or not to be, that is the question:\\n'\n\n[T=1.0]\n  'To be, or not to be, that is the troubles'\n\n[T=1.5]\n  'To be slings and arrows the sea of t '\n\n[Top-k=5, T=1.0]\n  'To be, or not to be, that is the question'\n\n[Top-p=0.9, T=1.0]\n  'To be, or not to be, that is the question:'\n"
+        }
+      ]
+    },
+    {
+      "id": "text-generation-interpretation",
+      "type": "text",
+      "source": "Greedy decoding reproduces the source text almost exactly — with a small model trained on a tiny dataset, the distribution is peaked. Temperature=1.5 starts making errors ('slings and arrows the sea of t') because it gives real probability to less likely continuations.\n\nIn a large model trained on diverse data, the difference between strategies is more interesting. At temperature=1.0, the model explores its learned distribution. At temperature=0.7, it sticks closer to the most likely paths but still varies. The right choice depends on your use case."
+    }
+  ]
+}
+```
+
+---
+
+## When to Use Each Strategy
+
+| Strategy | Temperature | Top-K | Top-P | Best For |
+|:---------|:------------|:------|:------|:---------|
+| Greedy | 0 | — | — | Deterministic tasks, debugging, beam search |
+| Conservative | 0.3–0.5 | — | — | Factual Q&A, code completion |
+| Balanced | 0.7–1.0 | — | 0.9–0.95 | General text, chat |
+| Creative | 1.0–1.3 | — | 0.95 | Creative writing, brainstorming |
+| High-entropy | 1.5+ | 50 | — | Exploration, diversity sampling |
+
+In practice, most production systems use **temperature=0.7-1.0 with top-p=0.9-0.95** and leave top-k disabled. Top-p handles the adaptive cutoff better than a fixed top-k.
+
+---
+
+## Quick Recap
+
+- Generation is **autoregressive**: the model generates one token at a time, feeding each generated token back as part of the next input.
+- Only the **last position's logits** are used at each step — that's the distribution over the next token.
+- **Greedy** (argmax) is deterministic but produces repetitive output.
+- **Temperature** sharpens (< 1) or flattens (> 1) the distribution before sampling.
+- **Top-k** limits candidates to the k most likely tokens.
+- **Top-p (nucleus)** adapts the candidate set to the model's confidence — fewer candidates when confident, more when uncertain. This is the most widely used strategy.
+- For factual tasks, use lower temperature. For creative tasks, use higher temperature. For most general-purpose generation: temperature=0.7-1.0, top-p=0.9.

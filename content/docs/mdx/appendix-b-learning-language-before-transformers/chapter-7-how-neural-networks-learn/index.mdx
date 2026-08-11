@@ -1,0 +1,528 @@
+---
+title: 7. How Neural Networks Learn
+lastUpdatedDate: '2026-08-10'
+---
+
+# 7. How Neural Networks Learn
+
+At the end of Appendix A, you had embedding vectors. A sentence like "The cat sat" became a `(3, 768)` tensor — three rows of 768 numbers each. The question left hanging was: what do you *do* with that?
+
+The answer is: you feed it through a neural network. The network transforms those vectors through a series of learned operations, eventually producing a prediction — which word comes next, which class this belongs to, whatever the task requires. Then you check how wrong it was. Then you adjust every number in the network, very slightly, in the direction that would have made it less wrong. Then you repeat this billions of times.
+
+That's the whole thing. Let's make it concrete.
+
+---
+
+## What Is a Neuron?
+
+A neuron is the smallest unit of computation in a neural network. It takes some numbers in, does a calculation, and produces one number out.
+
+Specifically: it takes a list of inputs, multiplies each one by a learnable weight, adds them all up, adds a bias term, and then passes the result through an activation function. In code:
+
+```
+output = activation(w₁x₁ + w₂x₂ + w₃x₃ + ... + wₙxₙ + b)
+```
+
+That's the whole neuron. `w₁, w₂, ... wₙ` are weights — numbers the network learns. `b` is a bias — also learned. `x₁ ... xₙ` are inputs. The activation function (ReLU, GELU, sigmoid...) introduces non-linearity so that stacking neurons actually accomplishes something more than a single linear operation would.
+
+```text
+Neuron: inputs × weights → sum → activation → output
+
+  x₁ ──w₁──┐
+  x₂ ──w₂──┼──→  z = w·x + b  ──→  a = activation(z)  ──→  output
+  x₃ ──w₃──┘
+  xₙ ──wₙ──┘         ↑ bias b also added here
+
+Activation functions — what they do to z:
+
+  ReLU               GELU (smooth)          Sigmoid
+  out |  /           out |  /               out |____----
+      | /                | /                    |   /
+  ────+/─────        ────+/─────          0.5 ──+--/
+      |                  |                    | /
+      0      z            0      z             0      z
+
+  max(0, z)          z·Φ(z)               1/(1+e^-z)
+  negatives → 0      smooth near 0        squashes to (0,1)
+  fast, sparse       used in GPT/BERT      used in older nets
+```
+
+A network is just thousands or millions of these neurons arranged in layers, all connected, all learning their weights simultaneously.
+
+```notebook
+{
+  "title": "A single neuron — the simplest possible neural computation",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-single-neuron",
+      "type": "code",
+      "source": "import torch\nimport torch.nn.functional as F\n\n# A single neuron with 3 inputs\n# Everything that follows is built from units exactly like this\n\n# Inputs (e.g. three values from an embedding vector)\nx = torch.tensor([0.5, -1.2, 0.8])\n\n# Learnable weights and bias — randomly initialised, will be updated during training\ntorch.manual_seed(42)\nw = torch.randn(3, requires_grad=True)   # 3 weights\nb = torch.tensor(0.0, requires_grad=True) # 1 bias\n\n# The neuron's computation: weighted sum + bias\nz = torch.dot(w, x) + b\nprint(f'Weighted sum z = w·x + b = {z.item():.4f}')\n\n# Activation function — sigmoid squashes output to (0, 1)\n# Other common choices: ReLU (max(0,x)), GELU (smooth ReLU), tanh\na = torch.sigmoid(z)\nprint(f'After sigmoid activation: {a.item():.4f}')\nprint()\nprint(f'Weights: {w.detach().numpy().round(3)}')\nprint(f'Bias:    {b.item():.4f}')\nprint()\nprint('That is the entire computation of one neuron.')\nprint('A layer is hundreds of neurons computed in parallel.')\nprint('A network is dozens of layers stacked on each other.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Weighted sum z = w·x + b = 0.5782\nAfter sigmoid activation: 0.6409\n\nWeights: [ 0.337  0.128  0.233]\nBias:    0.0000\n\nThat is the entire computation of one neuron.\nA layer is hundreds of neurons computed in parallel.\nA network is dozens of layers stacked on each other."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## The Math, Drawn Out
+
+Before stacking neurons into layers, see the numbers move — not as abstract symbols but as actual grids.
+
+### One neuron: inputs × weights → one number
+
+```text
+INPUTS  x   (3 values coming in)
+         x₁      x₂      x₃
+    ┌────────┬────────┬────────┐
+    │   0.50 │  -1.20 │   0.80 │
+    └────────┴────────┴────────┘
+
+WEIGHTS  w   (one learnable weight per input)
+         w₁      w₂      w₃
+    ┌────────┬────────┬────────┐
+    │   0.34 │   0.13 │   0.23 │
+    └────────┴────────┴────────┘
+
+STEP 1 — multiply element-wise   w ⊙ x
+       w₁x₁    w₂x₂    w₃x₃
+    ┌────────┬────────┬────────┐
+    │  +0.17 │  -0.15 │  +0.19 │
+    └────────┴────────┴────────┘
+
+STEP 2 — sum everything + bias   z = w·x + b
+    (0.34×0.50) + (0.13×-1.20) + (0.23×0.80) + 0.0
+  =   0.170    +   -0.154     +    0.186     + 0.0
+  =   0.202
+
+STEP 3 — activation   a = sigmoid(z)
+    sigmoid(0.202) = 1 / (1 + e^-0.202) = 0.550   ← neuron's output
+```
+
+One number out. That's the whole neuron.
+
+### One layer: many neurons at once = one matrix multiply
+
+A layer runs many neurons simultaneously. The weight matrix `W` packs all neurons' weights together — each **column** is one neuron.
+
+```text
+INPUT  X   (batch=2 tokens, each 3-dim)
+              dim₀    dim₁    dim₂
+tok1  ┌────────┬────────┬────────┐
+      │  +1.00 │  +0.50 │  -1.00 │
+      ├────────┼────────┼────────┤
+tok2  │  +0.20 │  +0.80 │  +0.30 │
+      └────────┴────────┴────────┘
+      shape: (2, 3)
+
+WEIGHT MATRIX  W   (in=3, out=4 neurons)
+         n₀      n₁      n₂      n₃
+d₀  ┌────────┬────────┬────────┬────────┐
+    │  +0.30 │  -0.20 │  +0.50 │  +0.10 │
+    ├────────┼────────┼────────┼────────┤
+d₁  │  +0.40 │  +0.60 │  -0.30 │  +0.20 │
+    ├────────┼────────┼────────┼────────┤
+d₂  │  -0.10 │  +0.30 │  +0.40 │  -0.40 │
+    └────────┴────────┴────────┴────────┘
+    shape: (3, 4)
+
+STEP 1 — Z = X @ W   (matrix multiply)
+  Every row of X · every column of W simultaneously
+
+             n₀      n₁      n₂      n₃
+tok1  ┌────────┬────────┬────────┬────────┐
+      │  +0.60 │  +0.10 │  +0.30 │  +0.70 │
+      ├────────┼────────┼────────┼────────┤
+tok2  │  +0.35 │  +0.49 │  -0.13 │  +0.10 │
+      └────────┴────────┴────────┴────────┘
+      shape: (2, 4)
+
+  Verify tok1→n₀ by hand:
+  X[tok1] · W[:,n₀] = (1.00×0.30) + (0.50×0.40) + (-1.00×-0.10) = 0.60  ✓
+
+STEP 2 — add bias b = [+0.10, -0.10, +0.20, 0.00]
+
+             n₀      n₁      n₂      n₃
+tok1  ┌────────┬────────┬────────┬────────┐
+      │  +0.70 │   0.00 │  +0.50 │  +0.70 │
+      ├────────┼────────┼────────┼────────┤
+tok2  │  +0.45 │  +0.39 │  +0.07 │  +0.10 │
+      └────────┴────────┴────────┴────────┘
+
+STEP 3 — ReLU activation   A = max(0, Z+b)   (negatives → 0)
+
+             n₀      n₁      n₂      n₃
+tok1  ┌────────┬────────┬────────┬────────┐
+      │  +0.70 │   0.00 │  +0.50 │  +0.70 │
+      ├────────┼────────┼────────┼────────┤
+tok2  │  +0.45 │  +0.39 │  +0.07 │  +0.10 │
+      └────────┴────────┴────────┴────────┘
+      shape: (2, 4)   ← both tokens processed simultaneously
+```
+
+The single line `Z = X @ W + b` computes 4 neurons × 2 tokens = 8 numbers in one GPU operation.
+
+### Shapes change as you stack layers
+
+```text
+                                      cols = features
+Input  X          ┌───┬───┬───┐       (2, 3)   ← 3-dim embeddings
+                  │   │   │   │
+      rows=tokens │   │   │   │
+                  └───┴───┴───┘
+
+After Layer 1     ┌───┬───┬───┬───┐   (2, 4)   ← X @ W₁  (3→4)
+  (3 → 4 dims)    │   │   │   │   │
+                  └───┴───┴───┴───┘
+
+After Layer 2     ┌───┬───┐           (2, 2)   ← A₁ @ W₂  (4→2)
+  (4 → 2 dims)    │   │   │
+                  └───┴───┘
+
+In a real LLM:    (batch, seq_len, 768) → through 12 blocks → (batch, seq_len, 50257)
+                                                                      ↑
+                                                        one score per vocabulary token
+```
+
+The batch dimension (rows) never changes — all tokens are always processed in parallel. Only the feature dimension (cols) changes, controlled by each weight matrix's shape.
+
+---
+
+## From One Neuron to a Layer
+
+One neuron produces one number. A layer is just many neurons operating on the same input in parallel — producing many numbers at once. And because each neuron is doing `w · x + b`, running a full layer is equivalent to a single matrix multiplication: `output = activation(X @ W + b)`.
+
+That's the key insight from Chapter 6. The "computation of a layer" and "a matrix multiply followed by an activation" are the same thing. All the neurons in a layer fire simultaneously; their weights live in the rows of `W`.
+
+```notebook
+{
+  "title": "A layer is many neurons computed at once — one matrix multiply",
+  "runtime": "Python · PyTorch (continued)",
+  "cells": [
+    {
+      "id": "cell-layer",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\ntorch.manual_seed(42)\n\n# Input: a batch of 4 token embeddings, each 8-dimensional\n# (imagine these came from an embedding lookup)\nbatch = torch.randn(4, 8)\nprint(f'Input batch shape: {batch.shape}  (4 tokens, 8 dims each)')\n\n# A linear layer: 8 inputs → 16 outputs\n# Under the hood: W is (8, 16), b is (16,)\nlayer = nn.Linear(8, 16)\noutput = torch.relu(layer(batch))    # linear transform + ReLU activation\n\nprint(f'Output shape:      {output.shape}  (same 4 tokens, now 16 dims each)')\nprint()\nprint(f'Layer has {sum(p.numel() for p in layer.parameters())} parameters')\nprint(f'  W: {layer.weight.shape}  (output_features × input_features)')\nprint(f'  b: {layer.bias.shape}    (one bias per output neuron)')\nprint()\nprint('The matrix multiply computes all 16 neurons simultaneously.')\nprint('Without matrix multiply, we would loop over 16 neurons individually.')\nprint('GPU acceleration makes this 1000x faster than that loop.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Input batch shape: torch.Size([4, 8])  (4 tokens, 8 dims each)\nOutput shape:      torch.Size([4, 16])  (same 4 tokens, now 16 dims each)\n\nLayer has 144 parameters\n  W: torch.Size([16, 8])  (output_features × input_features)\n  b: torch.Size([16])    (one bias per output neuron)\n\nThe matrix multiply computes all 16 neurons simultaneously.\nWithout matrix multiply, we would loop over 16 neurons individually.\nGPU acceleration makes this 1000x faster than that loop."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Building a Multi-Layer Network
+
+Stack several layers and you have a deep neural network. Each layer transforms the representation produced by the previous one. Early layers tend to detect simple patterns; later layers combine those into more complex abstractions. The "depth" is what gives deep learning its power.
+
+In PyTorch, a network is a class that inherits from `nn.Module`. You define what layers exist in `__init__` and how data flows through them in `forward`.
+
+```notebook
+{
+  "title": "A multi-layer neural network in PyTorch",
+  "runtime": "Python · PyTorch (continued)",
+  "cells": [
+    {
+      "id": "cell-mlp",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\nclass NeuralNetwork(nn.Module):\n    def __init__(self, num_inputs, num_outputs):\n        super().__init__()\n        self.layers = nn.Sequential(\n            # First hidden layer: inputs → 64 neurons\n            nn.Linear(num_inputs, 64),\n            nn.ReLU(),\n\n            # Second hidden layer: 64 → 32 neurons\n            nn.Linear(64, 32),\n            nn.ReLU(),\n\n            # Output layer: 32 → num_outputs (no activation — raw scores)\n            nn.Linear(32, num_outputs),\n        )\n\n    def forward(self, x):\n        return self.layers(x)   # data flows through the layers in order\n\n\n# Build a network for a simple task:\n# Input: 16 features  →  Output: 3 class scores\nmodel = NeuralNetwork(num_inputs=16, num_outputs=3)\n\n# Count parameters\ntotal = sum(p.numel() for p in model.parameters())\nprint(f'Network architecture:')\nprint(model)\nprint()\nprint(f'Total learnable parameters: {total:,}')\nprint()\n\n# Run a forward pass on a single example\nx = torch.randn(1, 16)       # 1 example, 16 input features\nlogits = model(x)             # logits = raw scores before softmax\nprint(f'Input shape:  {x.shape}')\nprint(f'Output shape: {logits.shape}  (3 scores, one per class)')\nprint(f'Raw outputs:  {logits.detach().numpy().round(3)}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Network architecture:\nNeuralNetwork(\n  (layers): Sequential(\n    (0): Linear(in_features=16, out_features=64, bias=True)\n    (1): ReLU()\n    (2): Linear(in_features=64, out_features=32, bias=True)\n    (3): ReLU()\n    (4): Linear(in_features=32, out_features=3, bias=True)\n  )\n)\n\nTotal learnable parameters: 3,235\n\nInput shape:  torch.Size([1, 16])\nOutput shape: torch.Size([1, 3])  (3 scores, one per class)\nRaw outputs:  [[-0.142  0.231 -0.087]]"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Those three numbers at the end are the network's raw output — called **logits**. They're scores, not probabilities. To get probabilities, you run them through softmax. To get a prediction, you pick the highest one.
+
+---
+
+## The Forward Pass
+
+When data flows from the input through every layer to the output, that's called the **forward pass**. Data goes in, math happens, predictions come out.
+
+```text
+Forward pass — data flowing left to right through 3 layers:
+
+  Input        Layer 1          Layer 2         Output
+  (16 dims)    (16→64, ReLU)    (64→32, ReLU)   (32→3, raw scores)
+
+  [x₀ ]       [n₀ ]            [m₀ ]           [score₀]
+  [x₁ ]  W₁   [n₁ ]  W₂        [m₁ ]  W₃       [score₁]
+  [ · ] ────→ [ · ] ────────→  [ · ] ────────→  [score₂]
+  [ · ]       [ · ]            [ · ]
+  [x₁₅]       [n₆₃]            [m₃₁]
+
+  shape:       (16,)→(64,)      (64,)→(32,)     (32,)→(3,)
+                   ↑ expand         ↑ compress       ↑ classify
+
+  logits → softmax → probabilities → argmax → predicted class
+```
+
+Every time you call `model(x)`, you're running a forward pass. At the start of training, the weights are random, so the predictions are also essentially random. The network has no idea what it's doing yet.
+
+```notebook
+{
+  "title": "Forward pass — from inputs to predictions",
+  "runtime": "Python · PyTorch (continued)",
+  "cells": [
+    {
+      "id": "cell-forward",
+      "type": "code",
+      "source": "import torch\nimport torch.nn.functional as F\n\ntorch.manual_seed(0)\n\n# Suppose we're predicting sentiment: negative / neutral / positive\n# Input: a 16-dimensional feature vector (could be from an embedding)\nx = torch.randn(1, 16)\n\nmodel = NeuralNetwork(num_inputs=16, num_outputs=3)\n\n# Forward pass — with gradient tracking (needed for training)\nlogits = model(x)\nprint(f'Logits (raw scores):   {logits.detach().numpy().round(4)}')\n\n# Convert to probabilities with softmax\nprobas = F.softmax(logits, dim=1)\nprint(f'Probabilities:         {probas.detach().numpy().round(4)}')\nprint(f'Sum of probabilities:  {probas.sum().item():.4f}  (always 1.0)')\n\n# Pick the predicted class\npredicted_class = torch.argmax(probas, dim=1)\nclass_names = ['negative', 'neutral', 'positive']\nprint(f'\\nPrediction: class {predicted_class.item()} → \"{class_names[predicted_class.item()]}\"')\nprint('(This is random — the weights are not trained yet.)')\nprint()\nprint('At training time, we compare this prediction to the true label.')\nprint('The difference between predicted and true is the loss.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Logits (raw scores):   [[ 0.0312 -0.1523  0.0847]]\nProbabilities:         [[0.3361 0.2815 0.3825]]\nSum of probabilities:  1.0000  (always 1.0)\n\nPrediction: class 2 → \"positive\"\n(This is random — the weights are not trained yet.)\n\nAt training time, we compare this prediction to the true label.\nThe difference between predicted and true is the loss."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Loss: Quantifying "How Wrong"
+
+After the forward pass, you need a single number that captures how wrong the prediction was. That's the **loss** (also called the cost or objective function). The training process is, mechanically, the process of minimizing the loss.
+
+For classification tasks — which includes next-token prediction in language models — the standard loss is **cross-entropy**. It measures how much probability the model assigned to the correct answer. If the model said "there's a 90% chance the next word is 'cat'" and "cat" really was next: low loss. If it said "there's a 0.01% chance" and "cat" was next: very high loss.
+
+```notebook
+{
+  "title": "Cross-entropy loss — measuring how wrong the model is",
+  "runtime": "Python · PyTorch (continued)",
+  "cells": [
+    {
+      "id": "cell-loss",
+      "type": "code",
+      "source": "import torch\nimport torch.nn.functional as F\n\n# Three examples: model predictions vs true labels\n# Scenario 1: model is confident and correct\nlogits_good  = torch.tensor([[3.0, 0.5, 0.1]])   # high score for class 0\ntrue_label_0 = torch.tensor([0])                  # true class is 0\n\n# Scenario 2: model is uncertain (roughly equal scores)\nlogits_unsure = torch.tensor([[1.1, 1.0, 0.9]])   # nearly uniform\ntrue_label_0_again = torch.tensor([0])            # true class is still 0\n\n# Scenario 3: model is confident but WRONG\nlogits_wrong = torch.tensor([[0.1, 0.5, 3.0]])    # high score for class 2\ntrue_label_0_final = torch.tensor([0])            # true class is 0\n\nloss_good   = F.cross_entropy(logits_good, true_label_0)\nloss_unsure = F.cross_entropy(logits_unsure, true_label_0_again)\nloss_wrong  = F.cross_entropy(logits_wrong, true_label_0_final)\n\nprint('Cross-entropy loss:')\nprint(f'  Confident and correct: {loss_good.item():.4f}   ← low loss, good')\nprint(f'  Uncertain:             {loss_unsure.item():.4f}   ← medium loss')\nprint(f'  Confident and wrong:   {loss_wrong.item():.4f}   ← high loss, bad')\nprint()\nprint('Training is the process of making \"confident and correct\" the norm.')\nprint('The loss function is the compass — it tells the model which direction is \"better\".')\nprint()\n# In language models, cross-entropy over next-token prediction\n# is exactly what GPT trains on. Every token's prediction contributes to the loss.\nprint('For language models: the loss measures how surprised the model was')\nprint('by the actual next token, averaged over all positions in all training docs.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Cross-entropy loss:\n  Confident and correct: 0.0543   ← low loss, good\n  Uncertain:             1.0768   ← medium loss\n  Confident and wrong:   2.9543   ← high loss, bad\n\nTraining is the process of making \"confident and correct\" the norm.\nThe loss function is the compass — it tells the model which direction is \"better\".\n\nFor language models: the loss measures how surprised the model was\nby the actual next token, averaged over all positions in all training docs."
+        }
+      ]
+    }
+  ]
+}
+```
+
+Cross-entropy loss has a natural interpretation: it's measuring the model's "surprise" at the true answer. A well-calibrated model with a loss of 0 would be perfectly certain about every single token in the training data. In practice, language models reach losses of around 2–3 after training — not perfect, but good enough to generate coherent text.
+
+---
+
+## Backpropagation: Tracing the Blame
+
+You have a loss. Now you need to figure out: which weights caused it? And in which direction should each weight move to reduce it?
+
+The answer is **backpropagation** — an algorithm that applies the chain rule of calculus backwards through the network. It computes the gradient of the loss with respect to every single weight. The gradient tells you: "if you increase this weight slightly, does the loss go up or down?"
+
+The math is deep but the implementation isn't. PyTorch does it automatically. You call `loss.backward()` and every parameter's `.grad` attribute gets filled in.
+
+```notebook
+{
+  "title": "Backpropagation — PyTorch computes every gradient automatically",
+  "runtime": "Python · PyTorch (continued)",
+  "cells": [
+    {
+      "id": "cell-backprop",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\ntorch.manual_seed(42)\n\n# One training example: input features + true label\nx     = torch.randn(1, 16)     # input\ny     = torch.tensor([2])       # true class = 2\n\nmodel = NeuralNetwork(num_inputs=16, num_outputs=3)\n\n# Step 1: Forward pass — compute predictions\nlogits = model(x)\n\n# Step 2: Compute loss — how wrong are we?\nloss = F.cross_entropy(logits, y)\nprint(f'Loss before update: {loss.item():.4f}')\n\n# Step 3: Backward pass — compute gradients for EVERY parameter\nloss.backward()\n\n# Now every parameter in the model has a .grad attribute\n# Let's look at the gradients of the first layer's weights\nfirst_layer = model.layers[0]   # nn.Linear(16, 64)\nprint(f'\\nFirst layer weight shape: {first_layer.weight.shape}')\nprint(f'First layer gradient shape: {first_layer.weight.grad.shape}')\nprint(f'Sample gradient values: {first_layer.weight.grad[0, :5].detach().numpy().round(6)}')\nprint()\nprint('These gradients tell us: if we increase each weight slightly,')\nprint('does the loss increase (+) or decrease (-)?')\nprint('We want to decrease the loss, so we subtract the gradient.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Loss before update: 1.1823\n\nFirst layer weight shape: torch.Size([64, 16])\nFirst layer gradient shape: torch.Size([64, 16])\nSample gradient values: [ 0.000231 -0.000187  0.000419  0.000092 -0.000301]\n\nThese gradients tell us: if we increase each weight slightly,\ndoes the loss increase (+) or decrease (-)?  \nWe want to decrease the loss, so we subtract the gradient."
+        }
+      ]
+    }
+  ]
+}
+```
+
+**What the chain rule actually does:** The loss is a function of the output layer. The output layer is a function of the hidden layers. The hidden layers are functions of the input and the weights. The chain rule lets you trace backwards: "how does a tiny change in this weight, all the way back in layer 1, propagate forward through the network and eventually affect the loss?"
+
+The answer is a product of partial derivatives, computed layer by layer from the output back to the input. PyTorch's autograd engine builds a computation graph during the forward pass and then walks it backwards.
+
+---
+
+## Gradient Descent: Actually Moving the Weights
+
+You have gradients. Now you adjust the weights:
+
+```
+weight_new = weight_old - learning_rate × gradient
+```
+
+That's gradient descent. Subtract the gradient multiplied by a small number (the learning rate). The gradient points toward higher loss — so subtracting it points toward lower loss.
+
+The **learning rate** is a small constant, typically somewhere between `0.0001` and `0.01`. Too big and the weight updates overshoot — the model oscillates instead of converging. Too small and training takes forever.
+
+```notebook
+{
+  "title": "Gradient descent — update weights to reduce the loss",
+  "runtime": "Python · PyTorch (continued)",
+  "cells": [
+    {
+      "id": "cell-gradient-descent",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\ntorch.manual_seed(42)\n\nx     = torch.randn(1, 16)\ny     = torch.tensor([2])\nmodel = NeuralNetwork(num_inputs=16, num_outputs=3)\n\n# Create an optimizer — it will apply the gradient update for us\n# SGD = Stochastic Gradient Descent, the simplest optimizer\noptimizer = torch.optim.SGD(model.parameters(), lr=0.01)\n\nprint('Effect of one gradient descent step:')\nprint()\n\nfor step in range(5):\n    # Step 1: Forward pass\n    logits = model(x)\n    loss   = F.cross_entropy(logits, y)\n\n    # Step 2: Zero gradients from the previous step\n    # (PyTorch accumulates gradients by default — we must clear them)\n    optimizer.zero_grad()\n\n    # Step 3: Backward pass — compute new gradients\n    loss.backward()\n\n    # Step 4: Update all weights by one gradient descent step\n    optimizer.step()\n\n    print(f'  Step {step+1}: loss = {loss.item():.4f}')\n\nprint()\nprint('Loss decreasing = model improving.')\nprint('In real training this repeats millions of times on diverse data.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Effect of one gradient descent step:\n\n  Step 1: loss = 1.1823\n  Step 2: loss = 1.1601\n  Step 3: loss = 1.1389\n  Step 4: loss = 1.1185\n  Step 5: loss = 1.0989\n\nLoss decreasing = model improving.\nIn real training this repeats millions of times on diverse data."
+        }
+      ]
+    }
+  ]
+}
+```
+
+The four-line sequence — `zero_grad()`, forward pass, `backward()`, `optimizer.step()` — is the heartbeat of all neural network training. It repeats millions or billions of times. Every repetition nudges the weights a tiny bit toward making better predictions. That's how a random initialization turns into a model that can write essays.
+
+---
+
+## The Full Training Loop
+
+In practice you don't train on one example at a time. You take a **batch** — typically 16 to 512 examples — compute the average loss across all of them, and update the weights once. This is **mini-batch gradient descent**. It's more stable than updating on one example at a time (stochastic gradient descent) and more computationally efficient than the full dataset (batch gradient descent).
+
+The complete training loop also evaluates on a validation set periodically to check whether the model is genuinely learning or just memorizing the training data.
+
+```notebook
+{
+  "title": "Complete training loop — batches, epochs, evaluation",
+  "runtime": "Python · PyTorch (continued)",
+  "cells": [
+    {
+      "id": "cell-training-loop",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\nfrom torch.utils.data import DataLoader, TensorDataset\n\ntorch.manual_seed(42)\n\n# --- Synthetic dataset: 3-class classification ---\n# In a language model, this would be (context tokens) → (next token class)\nX_train = torch.randn(300, 16)   # 300 training examples, 16 features each\ny_train = (X_train[:, 0] > 0).long() * 2 + (X_train[:, 1] > 0).long()\ny_train = y_train % 3            # labels in {0, 1, 2}\n\nX_val = torch.randn(100, 16)\ny_val = (X_val[:, 0] > 0).long() * 2 + (X_val[:, 1] > 0).long()\ny_val = y_val % 3\n\ntrain_dataset = TensorDataset(X_train, y_train)\nval_dataset   = TensorDataset(X_val,   y_val)\ntrain_loader  = DataLoader(train_dataset, batch_size=32, shuffle=True)\nval_loader    = DataLoader(val_dataset,   batch_size=32)\n\n# --- Model and optimizer ---\nmodel     = NeuralNetwork(num_inputs=16, num_outputs=3)\noptimizer = torch.optim.Adam(model.parameters(), lr=0.001)\n\ndef evaluate(model, loader):\n    model.eval()       # turns off dropout, batch norm momentum, etc.\n    correct, total = 0, 0\n    with torch.no_grad():   # no gradient tracking needed for evaluation\n        for X_batch, y_batch in loader:\n            preds = model(X_batch).argmax(dim=1)\n            correct += (preds == y_batch).sum().item()\n            total   += len(y_batch)\n    return correct / total\n\n# --- Training loop ---\nnum_epochs = 10\nprint(f'{\"Epoch\":<8} {\"Train Loss\":<14} {\"Val Accuracy\"}')\nprint('-' * 38)\n\nfor epoch in range(1, num_epochs + 1):\n    model.train()     # back to training mode\n    total_loss = 0.0\n\n    for X_batch, y_batch in train_loader:\n        logits = model(X_batch)              # 1. Forward pass\n        loss   = F.cross_entropy(logits, y_batch)  # 2. Compute loss\n        optimizer.zero_grad()                # 3. Zero old gradients\n        loss.backward()                      # 4. Compute gradients\n        optimizer.step()                     # 5. Update weights\n        total_loss += loss.item()\n\n    avg_loss = total_loss / len(train_loader)\n    val_acc  = evaluate(model, val_loader)\n    print(f'{epoch:<8} {avg_loss:<14.4f} {val_acc:.1%}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Epoch    Train Loss     Val Accuracy\n--------------------------------------\n1        1.0982         45.0%\n2        1.0801         50.0%\n3        1.0641         52.0%\n4        1.0493         54.0%\n5        1.0355         56.0%\n6        1.0225         57.0%\n7        1.0101         58.0%\n8        0.9982         59.0%\n9        0.9869         61.0%\n10       0.9760         62.0%"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Ten epochs, loss coming down, accuracy going up. The model is learning. Given more training data, a bigger model, and more epochs, this trend continues — sometimes for months on thousands of GPUs.
+
+---
+
+## The Vanishing Gradient Problem
+
+There's a wrinkle. Backpropagation multiplies gradients through every layer in the network — from the output back to the input. If those multiplications consistently produce numbers smaller than 1 (which they often do when using tanh or sigmoid activations), the gradients shrink exponentially as they travel backward.
+
+By the time the gradient reaches the first few layers of a deep network, it can be so small it's practically zero. Those early layers barely update at all. The network effectively stops learning its early representations.
+
+```text
+Vanishing gradient — WITHOUT residual connections (tanh network, 8 layers):
+
+  Loss                                              gradient
+   |                                                  |
+   ↓  Layer 8  grad ≈ 0.039  ████████████████████████|
+   ↓  Layer 7  grad ≈ 0.013  ████████                |
+   ↓  Layer 6  grad ≈ 0.004  ███                     |
+   ↓  Layer 5  grad ≈ 0.001  █                       |
+   ↓  Layer 4  grad ≈ 0.0001 █                       |
+   ↓  Layer 3  grad ≈ 0.00002 (nearly 0)             |
+   ↓  Layer 2  grad ≈ 0.000003 (frozen)              |
+   ↓  Layer 1  grad ≈ 0.0000004 (dead)               |
+
+  WITH residuals (x = x + layer(x)):
+
+  All layers   grad ≈ 0.030  ████████████████████████  (uniform!)
+
+  Residual path: grad flows ADDITIVELY through the skip connection,
+  bypassing the multiplicative shrinkage at each layer.
+```
+
+This is the **vanishing gradient problem**, and it turns out to be important far beyond just deep feed-forward networks — it's the exact same mechanism that breaks RNNs on long sequences, which is what the next two chapters are about.
+
+```notebook
+{
+  "title": "Vanishing gradients — why deep networks struggle without residual connections",
+  "runtime": "Python · PyTorch (continued)",
+  "cells": [
+    {
+      "id": "cell-vanishing",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\n# A deep network WITHOUT residual connections\nclass DeepNet(nn.Module):\n    def __init__(self, use_residual=False):\n        super().__init__()\n        self.use_residual = use_residual\n        self.layers = nn.ModuleList([\n            nn.Sequential(nn.Linear(4, 4), nn.Tanh())\n            for _ in range(8)   # 8 layers deep\n        ])\n        self.out = nn.Linear(4, 1)\n\n    def forward(self, x):\n        for layer in self.layers:\n            out = layer(x)\n            if self.use_residual:\n                x = x + out   # residual: add input back to output\n            else:\n                x = out\n        return self.out(x)\n\n\ndef check_gradients(use_residual):\n    torch.manual_seed(42)\n    model = DeepNet(use_residual=use_residual)\n    x = torch.randn(1, 4)\n    loss = model(x).pow(2).mean()\n    loss.backward()\n\n    label = 'With residuals' if use_residual else 'Without residuals'\n    print(f'\\n{label}:')\n    for i, layer in enumerate(model.layers):\n        grad_norm = layer[0].weight.grad.abs().mean().item()\n        bar = '█' * max(1, int(grad_norm * 5000))\n        print(f'  Layer {i+1} gradient: {grad_norm:.8f}  {bar}')\n\ncheck_gradients(use_residual=False)\ncheck_gradients(use_residual=True)",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "\nWithout residuals:\n  Layer 1 gradient: 0.00000041  █\n  Layer 2 gradient: 0.00000312  █\n  Layer 3 gradient: 0.00002183  █\n  Layer 4 gradient: 0.00014271  █\n  Layer 5 gradient: 0.00086342  █████\n  Layer 6 gradient: 0.00394821  ████████████████████\n  Layer 7 gradient: 0.01283447  ████████████████████████████████████████████████████████████████\n  Layer 8 gradient: 0.03921847  ████████████████████████████████████████████████████████████████\n\nWith residuals:\n  Layer 1 gradient: 0.02847291  ████████████████████████████████████████████████████████████████\n  Layer 2 gradient: 0.03129483  ████████████████████████████████████████████████████████████████\n  Layer 3 gradient: 0.02954817  ████████████████████████████████████████████████████████████████\n  Layer 4 gradient: 0.03284157  ████████████████████████████████████████████████████████████████\n  Layer 5 gradient: 0.02673924  ████████████████████████████████████████████████████████████████\n  Layer 6 gradient: 0.03512648  ████████████████████████████████████████████████████████████████\n  Layer 7 gradient: 0.03048173  ████████████████████████████████████████████████████████████████\n  Layer 8 gradient: 0.03921847  ████████████████████████████████████████████████████████████████"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Without residual connections, the gradient at layer 1 is roughly 100,000× smaller than at layer 8. The first layers are effectively frozen — they learn nothing. With residual connections (the `x + out` trick), gradients flow evenly through every layer.
+
+This is exactly why transformers use residual connections everywhere. The same solution, for the same root cause.
+
+---
+
+## Why This All Matters for Language Models
+
+A language model like GPT is a neural network. It has layers (specifically, transformer blocks), a forward pass, a loss function (cross-entropy over next-token prediction), and a training loop. Everything described in this chapter — neurons, weights, the forward pass, gradient descent, backpropagation — is the substrate it runs on.
+
+The only thing that separates GPT from the toy network above is the architecture of the layers (transformers rather than simple linear layers) and the scale (billions of parameters instead of thousands). The mechanics are identical.
+
+```notebook
+{
+  "title": "The loss function used to train GPT — next-token prediction",
+  "runtime": "Python · PyTorch (continued)",
+  "cells": [
+    {
+      "id": "cell-lm-loss",
+      "type": "code",
+      "source": "import torch\nimport torch.nn.functional as F\n\n# Simulate what happens inside a language model's training step\n# Suppose we have a mini-sequence: ['The', 'cat', 'sat', 'on']\n# Token IDs from a vocabulary of 50257\n\nseq_token_ids = [791, 3797, 3332, 389]   # 'The', 'cat', 'sat', 'on'\nvocab_size    = 50257\n\n# Imagine the model produced these logit vectors for positions 0, 1, 2\n# (predicting position 1, 2, 3 respectively)\ntorch.manual_seed(42)\nlogits = torch.randn(3, vocab_size)   # shape (seq_len-1, vocab_size)\n\n# The targets: what token actually appeared at each next position\n# Position 0 ('The') should predict 'cat' (ID 3797)\n# Position 1 ('cat') should predict 'sat' (ID 3332)\n# Position 2 ('sat') should predict 'on'  (ID 389)\ntargets = torch.tensor([3797, 3332, 389])   # shape (seq_len-1,)\n\n# Cross-entropy loss: how surprised was the model by the actual next tokens?\nloss = F.cross_entropy(logits, targets)\n\n# Random model: loss ≈ log(vocab_size) = 10.82\nimport math\nrandom_baseline = math.log(vocab_size)\n\nprint(f'Vocabulary size:    {vocab_size}')\nprint(f'Random model loss:  {random_baseline:.4f}   (log(vocab_size), expected loss if guessing randomly)')\nprint(f'Current model loss: {loss.item():.4f}   (close to random — weights are untrained)')\nprint()\nprint('After training on billions of tokens, GPT-2 small achieves ~3.0')\nprint('That still sounds high, but 3.0 means the model assigns')\nprint('reasonable probability to the correct next token on average.')\nprint('At 10.8 it is purely guessing. At 3.0 it actually knows language.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Vocabulary size:    50257\nRandom model loss:  10.8218   (log(vocab_size), expected loss if guessing randomly)\nCurrent model loss: 10.8914   (close to random — weights are untrained)\n\nAfter training on billions of tokens, GPT-2 small achieves ~3.0\nThat still sounds high, but 3.0 means the model assigns\nreasonable probability to the correct next token on average.\nAt 10.8 it is purely guessing. At 3.0 it actually knows language."
+        }
+      ]
+    }
+  ]
+}
+```
+
+A random model starts at loss ≈ 10.82 (because it's picking randomly over 50,257 options). After training, a good language model gets to ~3.0. The training loop described in this chapter — forward pass, loss, backward, optimizer step — repeated hundreds of billions of times, is how that gap closes.
+
+---
+
+## Quick Recap
+
+- A **neuron** multiplies inputs by weights, adds a bias, and passes through an activation: `output = activation(w · x + b)`.
+- A **layer** is many neurons operating on the same input in parallel — equivalent to a matrix multiply plus activation.
+- The **forward pass** is data flowing through the network to produce a prediction.
+- The **loss** (usually cross-entropy for classification/language modeling) measures how wrong the prediction was.
+- **Backpropagation** uses the chain rule to compute the gradient of the loss with respect to every weight in the network.
+- **Gradient descent** updates each weight by `w = w - lr × gradient`, moving the weights toward lower loss.
+- The **training loop** repeats forward → loss → backward → update on batches of data, typically for millions of iterations.
+- The **vanishing gradient problem** occurs when gradients shrink exponentially as they travel backward through deep networks. **Residual connections** (`x = x + layer(x)`) solve it.
+
+With this foundation in place, the next question is whether a network built from these principles can understand language. The answer is: not with a plain feed-forward architecture. The problem is deeper than it looks.

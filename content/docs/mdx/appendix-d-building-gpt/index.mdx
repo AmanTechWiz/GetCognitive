@@ -1,19 +1,36 @@
 ---
 title: Appendix D — Building GPT
-description: 'Understanding GPT architecture, training, inference, and scaling laws'
+description: 'Build a GPT from scratch: architecture, training, inference, and one complete end-to-end notebook'
 isChapterOverview: true
-lastUpdatedDate: '2026-08-08'
+lastUpdatedDate: '2026-08-10'
 ---
 
 # Appendix D — Building GPT
 
-This appendix shows how GPT—the decoder-only transformer architecture—brings together everything we've learned so far.
+This appendix is about building GPT from scratch — not just reading about it, but actually constructing every component, understanding why each piece exists, and watching a model learn to generate text.
 
-Starting with the transformer blocks from Appendix C, we'll see:
-- How GPT's decoder-only architecture processes language
-- How next-token prediction drives learning
-- How inference generates text token by token
-- Why scaling up models leads to emergent abilities
-- The practical details like context windows and KV caches
+Appendix C covered the transformer block in detail: self-attention, multi-head attention, positional encoding, and the feed-forward network. This appendix assembles those pieces into a complete language model, trains it, and generates text.
 
-By the end of this appendix, you'll understand how GPT works from input to output, and why larger models are smarter.
+By the end, you'll understand:
+- Why GPT is called "decoder-only" and what that means structurally
+- How next-token prediction works as a training objective, with real numbers
+- What the training loop looks like step-by-step, including learning rate scheduling
+- How autoregressive generation works, and what temperature, top-k, and top-p actually do
+- How to build the entire thing from scratch in one complete notebook
+
+## Chapters
+
+**Chapter 11 — GPT Architecture**
+The decoder-only architecture from top to bottom. What makes GPT different from an encoder, how the causal mask works, and a parameter breakdown for real models from GPT-2 small to GPT-3.
+
+**Chapter 12 — Training GPT: Data and the Objective**
+What training data looks like as token sequences, how input/target pairs are created by shifting by one position, and how cross-entropy loss measures the model's surprise at seeing the next token. Includes real token numbers.
+
+**Chapter 13 — The Training Loop**
+The five steps that run on every batch: forward pass, compute loss, zero gradients, backward pass, optimizer step. Plus learning rate warmup and cosine decay explained with diagrams, and gradient clipping. A complete training loop that runs a tiny GPT on Shakespeare data and shows loss going down.
+
+**Chapter 14 — Inference and Text Generation**
+Autoregressive generation step by step. Greedy decoding, temperature sampling, top-k, and top-p explained with real examples. A complete `generate()` function with all sampling modes and side-by-side output comparisons at different temperatures.
+
+**Chapter 15 — Building GPT From Scratch: The Complete Notebook**
+The crown jewel. One complete notebook that builds everything — tokenizer, embeddings, self-attention, multi-head attention, transformer block, the full GPT model, training loop, and generation — from absolute zero. Every step is explained. The loss goes down. Text gets generated. This is the whole picture in one place.

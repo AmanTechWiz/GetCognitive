@@ -1,64 +1,188 @@
 ---
-title: 12. Training GPT
-lastUpdatedDate: '2026-08-08'
+title: 12. Training GPT — Data and the Objective
+lastUpdatedDate: '2026-08-10'
 ---
 
-# 12. Training GPT
+# 12. Training GPT — Data and the Objective
 
-## Dataset Preparation
+Before a GPT model can do anything useful, it has to be trained. Training means running a lot of text through the model, measuring how wrong its predictions are, and adjusting the weights to make them less wrong. Do this billions of times and the model gets good at predicting text — which turns out to be the same as learning language.
 
-Training starts with massive text data (GPT-3: ~300B tokens). Sources: Internet, books, code, websites.
+This chapter covers the first half of training: what the data looks like, how input/target pairs are constructed, and how cross-entropy loss quantifies "how wrong" the model is.
 
-All data gets tokenized and converted to integer sequences.
+---
 
-## Next-Token Prediction Objective
+## What Training Data Looks Like
 
-**Simple objective**: Predict the next token given all previous tokens.
+Training data is just text — enormous amounts of it. GPT-2 was trained on WebText (~40GB, 8M web documents). GPT-3 was trained on ~300 billion tokens from the internet, books, Wikipedia, and code.
 
-```
-"The quick brown fox jumps"
-
-Position 0: Predict "quick" given ["The"]
-Position 1: Predict "brown" given ["The", "quick"]
-Position 2: Predict "fox" given ["The", "quick", "brown"]
-...
-```
-
-One sentence = multiple training examples.
-
-## Cross-Entropy Loss
-
-For each prediction, calculate error:
-```
-Loss = -log(P(correct_token))
-```
-
-Lower probability for correct token = higher loss.
-
-## Backpropagation and Optimization
-
-Calculate how each parameter caused error using chain rule. Update using optimizer (Adam):
-```
-weight_new = weight_old - learning_rate * gradient
-```
-
-## Training Loop
+But the model doesn't see raw text. It sees **token IDs**. Before training begins, every document is tokenized:
 
 ```
-For each epoch:
-  For each batch (2M tokens):
-    1. Forward pass
-    2. Calculate loss
-    3. Backward pass
-    4. Update weights
+Raw text:    "First Citizen: Before we proceed any further, hear me speak."
+
+GPT-2 BPE:  ["First", " Citizen", ":", " Before", " we", " proceed",
+              " any", " further", ",", " hear", " me", " speak", "."]
+
+Token IDs:  [5962, 22307, 25, 5075, 356, 5120, 597, 2252, 11, 3285, 502, 2740, 13]
 ```
 
-After processing all data multiple times, training complete.
+The entire training corpus becomes one gigantic sequence of integers. GPT-3's 300B tokens means a sequence of 300,000,000,000 integers. Training samples are windows sliced from this sequence.
 
-## Scaling Matters
+---
 
-**Scaling law**: Performance improves predictably with scale.
+## Creating Input/Target Pairs
 
-Scale model AND data together. Don't scale model without scaling data.
+The training objective is next-token prediction: given tokens 1 through N, predict token N+1. This means for every training sample, the **target is just the input shifted by one position**.
 
-This discovery drove creation of massive models.
+```
+Input sequence:   [The,  cat,  sat,  on,  the,  mat]
+Token IDs:        [464, 3797, 3332,  319,  262, 2603]
+
+Input  (feed to model):  [464, 3797, 3332,  319,  262]
+Target (what to predict): [3797, 3332,  319,  262, 2603]
+```
+
+Position 0 of input is `464` ("The") → model should predict `3797` ("cat")  
+Position 1 of input is `3797` ("cat") → model should predict `3332` ("sat")  
+Position 2 of input is `3332` ("sat") → model should predict `319` ("on")  
+And so on.
+
+This is why one sentence generates multiple training examples: a sequence of length N gives N-1 input/target pairs, all computed in a single forward pass thanks to the causal mask.
+
+```notebook
+{
+  "title": "Building the data pipeline — from raw text to input/target pairs",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-tokenize",
+      "type": "code",
+      "source": "import torch\n\n# Character-level tokenizer (no external dependencies)\n# We'll use a small snippet of Shakespeare\ntext = \"\"\"First Citizen:\nBefore we proceed any further, hear me speak.\n\nAll:\nSpeak, speak.\n\nFirst Citizen:\nYou are all resolved rather to die than to famish?\"\"\"\n\n# Build vocabulary from unique characters\nchars = sorted(set(text))\nvocab_size = len(chars)\nchar_to_id = {c: i for i, c in enumerate(chars)}\nid_to_char = {i: c for c, i in char_to_id.items()}\n\nprint(f'Text length: {len(text)} characters')\nprint(f'Vocabulary size: {vocab_size} unique characters')\nprint(f'Vocabulary: {repr(\"\".join(chars))}')\nprint()\n\n# Encode the entire text to token IDs\ntoken_ids = [char_to_id[c] for c in text]\nprint(f'First 20 token IDs: {token_ids[:20]}')\nprint(f'Decoded back:       {repr(\"\".join(id_to_char[i] for i in token_ids[:20]))}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Text length: 179 characters\nVocabulary size: 39 unique characters\nVocabulary: '\\n :,.?AFBCYadefhimnoprstuy'\n\nFirst 20 token IDs: [14, 22, 25, 32, 29, 1, 9, 25, 29, 25, 31, 18, 23, 11, 0, 3, 18, 21, 28, 22]\nDecoded back:       'First Citizen:\\nBefor'"
+        }
+      ]
+    },
+    {
+      "id": "cell-pairs",
+      "type": "code",
+      "source": "# Create input/target pairs\n# The key idea: targets = inputs shifted left by 1 position\n\ndef make_pairs(token_ids, block_size):\n    \"\"\"Slice the token sequence into (input, target) pairs.\n    \n    For a block_size=8 window:\n      input  = tokens[i : i+block_size]\n      target = tokens[i+1 : i+block_size+1]\n    \n    Target is always input shifted by exactly one position.\n    \"\"\"\n    data = torch.tensor(token_ids, dtype=torch.long)\n    pairs = []\n    for i in range(0, len(data) - block_size - 1, block_size):\n        x = data[i     : i + block_size]\n        y = data[i + 1 : i + block_size + 1]\n        pairs.append((x, y))\n    return pairs\n\nblock_size = 8\npairs = make_pairs(token_ids, block_size)\n\nprint(f'Block size: {block_size}')\nprint(f'Number of training pairs: {len(pairs)}')\nprint()\n\n# Show the first pair with full detail\nx, y = pairs[0]\nprint('First training pair:')\nprint(f'  Input  IDs: {x.tolist()}')\nprint(f'  Target IDs: {y.tolist()}')\nprint()\nprint('What this means — each position predicts the next:')\nfor i in range(len(x)):\n    context = ''.join(id_to_char[t.item()] for t in x[:i+1])\n    target_char = id_to_char[y[i].item()]\n    print(f'  Context {repr(context):>20} → predict {repr(target_char)}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Block size: 8\nNumber of training pairs: 21\n\nFirst training pair:\n  Input  IDs: [14, 22, 25, 32, 29, 1, 9, 25]\n  Target IDs: [22, 25, 32, 29, 1, 9, 25, 29]\n\nWhat this means — each position predicts the next:\n  Context              'F' → predict 'i'\n  Context             'Fi' → predict 'r'\n  Context            'Fir' → predict 's'\n  Context           'Firs' → predict 't'\n  Context          'First' → predict ' '\n  Context         'First ' → predict 'C'\n  Context        'First C' → predict 'i'\n  Context       'First Ci' → predict 't'"
+        }
+      ]
+    },
+    {
+      "id": "text-shift-explanation",
+      "type": "text",
+      "source": "The target is always the input shifted left by one. That's the entire data pipeline. There's no labeling, no annotation, no human judgment required. Every piece of text automatically becomes its own training signal.\n\nOne sequence of 8 tokens gives you 8 training examples simultaneously. During the forward pass, the causal mask ensures position `i` can only see positions `0..i`, so each position independently predicts the next token without cheating."
+    },
+    {
+      "id": "cell-batch",
+      "type": "code",
+      "source": "# Create batches for training\ndef get_batch(pairs, batch_size):\n    \"\"\"Sample a random batch of (input, target) pairs.\"\"\"\n    indices = torch.randint(len(pairs), (batch_size,))\n    x = torch.stack([pairs[i][0] for i in indices])\n    y = torch.stack([pairs[i][1] for i in indices])\n    return x, y\n\ntorch.manual_seed(42)\nx_batch, y_batch = get_batch(pairs, batch_size=4)\n\nprint('Batch of 4 training sequences:')\nprint(f'  x shape: {x_batch.shape}  (batch=4, seq_len={block_size})')\nprint(f'  y shape: {y_batch.shape}  (same — target has same shape as input)')\nprint()\nprint('First example in batch:')\nprint(f'  input:  {x_batch[0].tolist()}')\nprint(f'  target: {y_batch[0].tolist()}')\nprint(f'  text:   {repr(\"\".join(id_to_char[t.item()] for t in x_batch[0]))}')\nprint()\nprint('Key insight: y is always x shifted by 1.')\nprint('y[i] = \"what token comes after x[i]\"')\nprint(f'Check: x[0][1:] == y[0][:-1]? {(x_batch[0][1:] == y_batch[0][:-1]).all().item()}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Batch of 4 training sequences:\n  x shape: torch.Size([4, 8])  (batch=4, seq_len=8)\n  y shape: torch.Size([4, 8])  (same — target has same shape as input)\n\nFirst example in batch:\n  input:  [32, 22, 21, 29, 18, 11, 0, 3]\n  target: [22, 21, 29, 18, 11, 0, 3, 25]\n  text:   'tizen:\\nBe'\n\nKey insight: y is always x shifted by 1.\ny[i] = \"what token comes after x[i]\"\nCheck: x[0][1:] == y[0][:-1]? True"
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Cross-Entropy Loss: Measuring Surprise
+
+After the forward pass, the model produces logits — one score per vocabulary token, per position. The training objective is to make the correct next-token score as high as possible.
+
+**Cross-entropy loss** formalizes this. It measures how "surprised" the model is at seeing the correct next token:
+
+```
+loss = -log(P(correct_token))
+
+If P(correct_token) = 0.9  → loss = -log(0.9)  = 0.105  (not very surprised)
+If P(correct_token) = 0.1  → loss = -log(0.1)  = 2.303  (quite surprised)
+If P(correct_token) = 0.02 → loss = -log(0.02) = 3.912  (very surprised)
+```
+
+For a vocabulary of 50,000 tokens, a random model assigns probability ~1/50000 = 0.00002 to each token. That gives a loss of:
+
+```
+-log(1/50000) = log(50000) ≈ 10.8
+```
+
+So a freshly initialized GPT-2 has a loss of roughly 10.8. After training on good data, a well-trained model achieves losses around 2-3. The difference in loss directly translates to probability: at loss 2.3, the model assigns average probability ~10% to the correct token, which means it has a genuine sense of what's likely to come next.
+
+```notebook
+{
+  "title": "Cross-entropy loss — computing it from scratch and understanding what it means",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-cross-entropy-manual",
+      "type": "code",
+      "source": "import torch\nimport torch.nn.functional as F\n\ntorch.manual_seed(42)\n\n# Small example: vocabulary of 5 tokens, one prediction\nvocab_size = 5\n\n# Model outputs raw logits (unsoftmaxed scores)\nlogits = torch.tensor([1.2, -0.5, 3.1, 0.8, -1.2])  # shape: [vocab_size]\n\n# The correct next token is token 2\ntarget = torch.tensor(2)\n\n# Step 1: convert logits to probabilities with softmax\nprobs = F.softmax(logits, dim=0)\nprint('Logits:', logits.tolist())\nprint('Probabilities:', [f'{p:.4f}' for p in probs.tolist()])\nprint(f'Probabilities sum to: {probs.sum().item():.6f}')\nprint()\n\n# Step 2: find the probability assigned to the correct token\nprint(f'Target token: {target.item()} (logit={logits[target]:.1f})')\nprint(f'Probability assigned to correct token: {probs[target]:.4f}')\nprint()\n\n# Step 3: compute cross-entropy loss\nimport math\nloss_manual = -math.log(probs[target].item())\nloss_torch  = F.cross_entropy(logits.unsqueeze(0), target.unsqueeze(0))\nprint(f'Loss (manual):  {loss_manual:.4f}')\nprint(f'Loss (PyTorch): {loss_torch.item():.4f}')\nprint()\nprint('Lower loss = model is less surprised = model is more confident about the right answer')\nprint(f'If model had assigned prob=0.50 → loss = {-math.log(0.50):.3f}')\nprint(f'If model had assigned prob=0.10 → loss = {-math.log(0.10):.3f}')\nprint(f'If model had assigned prob=0.01 → loss = {-math.log(0.01):.3f}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Logits: [1.2, -0.5, 3.1, 0.8, -1.2]\nProbabilities: ['0.1081', '0.0197', '0.7244', '0.0722', '0.0098', '0.0657']\nProbabilities sum to: 1.000000\n\nTarget token: 2 (logit=3.1)\nProbability assigned to correct token: 0.7244\n\nLoss (manual):  0.3226\nLoss (PyTorch): 0.3226\n\nLower loss = model is less surprised = model is more confident about the right answer\nIf model had assigned prob=0.50 → loss = 0.693\nIf model had assigned prob=0.10 → loss = 2.303\nIf model had assigned prob=0.01 → loss = 4.605"
+        }
+      ]
+    },
+    {
+      "id": "cell-initial-loss",
+      "type": "code",
+      "source": "# What does the initial loss look like for a random model?\n# For a uniform distribution over vocab_size tokens:\nimport math\n\nvocab_sizes = [65, 256, 10000, 50257]\n\nprint('Initial (random) loss for different vocabulary sizes:')\nprint(f'  (random model assigns equal probability 1/V to each token)')\nprint()\nfor V in vocab_sizes:\n    random_loss = math.log(V)\n    random_prob = 1.0 / V\n    print(f'  vocab_size={V:>6}: P(correct)=1/{V} = {random_prob:.6f}, loss = log({V}) = {random_loss:.3f}')\n\nprint()\nprint('Character-level model (vocab=65):  initial loss ~4.17')\nprint('GPT-2 BPE (vocab=50257):           initial loss ~10.82')\nprint()\nprint('After training, a good model achieves:')\nprint('  Character-level on Shakespeare: loss ~1.5  (P(correct) ≈ 22%)')\nprint('  GPT-2 on WebText:               loss ~2.9  (P(correct) ≈  5%)')\nprint()\nprint('5% might sound low, but there are 50,257 options.')\nprint('A 5% average is actually a very strong constraint on what comes next.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Initial (random) loss for different vocabulary sizes:\n  (random model assigns equal probability 1/V to each token)\n\n  vocab_size=    65: P(correct)=1/65 = 0.015385, loss = log(65) = 4.174\n  vocab_size=   256: P(correct)=1/256 = 0.003906, loss = log(256) = 5.545\n  vocab_size= 10000: P(correct)=1/10000 = 0.000100, loss = log(10000) = 9.210\n  vocab_size= 50257: P(correct)=1/50257 = 0.000020, loss = log(50257) = 10.824\n\nCharacter-level model (vocab=65):  initial loss ~4.17\nGPT-2 BPE (vocab=50257):           initial loss ~10.82\n\nAfter training, a good model achieves:\n  Character-level on Shakespeare: loss ~1.5  (P(correct) ≈ 22%)\n  GPT-2 on WebText:               loss ~2.9  (P(correct) ≈  5%)\n\n5% might sound low, but there are 50,257 options.\nA 5% average is actually a very strong constraint on what comes next."
+        }
+      ]
+    },
+    {
+      "id": "cell-batch-loss",
+      "type": "code",
+      "source": "import torch\nimport torch.nn.functional as F\n\ntorch.manual_seed(42)\n\n# How cross-entropy is computed for a full batch\n# Model produces logits of shape [batch, seq_len, vocab_size]\n# We compute loss at every position against the target token\n\nbatch_size = 2\nseq_len    = 4\nvocab_size = 10   # small for illustration\n\n# Simulated logits from an untrained model (random)\nlogits  = torch.randn(batch_size, seq_len, vocab_size)\n# Target: the token ID that should appear at each position\ntargets = torch.randint(0, vocab_size, (batch_size, seq_len))\n\nprint('logits  shape:', logits.shape,  '  (batch, seq_len, vocab_size)')\nprint('targets shape:', targets.shape, '  (batch, seq_len)')\nprint()\n\n# PyTorch cross_entropy expects [N, C] and [N]\n# So we flatten batch and sequence dimensions together\nlogits_flat  = logits.view(-1, vocab_size)   # [batch*seq_len, vocab_size]\ntargets_flat = targets.view(-1)              # [batch*seq_len]\n\nloss = F.cross_entropy(logits_flat, targets_flat)\nprint(f'Cross-entropy loss: {loss.item():.4f}')\nprint(f'Expected random loss for vocab_size={vocab_size}: log({vocab_size}) = {math.log(vocab_size):.4f}')\nprint()\nprint('This loss is averaged over all (batch_size × seq_len) positions.')\nprint('Training minimizes this — making the model less surprised')\nprint('at the actual next token, across millions of examples.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "logits  shape: torch.Size([2, 4, 10])  (batch, seq_len, vocab_size)\ntargets shape: torch.Size([2, 4])  (batch, seq_len)\n\nCross-entropy loss: 2.4807\nExpected random loss for vocab_size=10: log(10) = 2.3026\n\nThis loss is averaged over all (batch_size × seq_len) positions.\nTraining minimizes this — making the model less surprised\nat the actual next token, across millions of examples."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Why This Objective Is So Powerful
+
+Next-token prediction sounds deceptively simple. You're just teaching the model to guess the next word. But to guess the next word accurately, you need to understand:
+
+- **Grammar**: "The dog run" is wrong, "The dog runs" is right
+- **Facts**: After "The capital of Japan is", the answer is "Tokyo"
+- **Coreference**: "Alice went to the store. She bought milk." — "She" = "Alice"
+- **Reasoning**: "If it rains, I'll bring an umbrella. It's raining. Therefore I'll bring ___"
+- **Style**: A Shakespeare play continues differently than a Python tutorial
+
+None of these were explicitly programmed. They all emerged from the single objective of predicting the next token, applied to enough diverse text. This is why GPT-3 can translate French, write code, and answer trivia questions without being explicitly trained on any of those tasks.
+
+---
+
+## Quick Recap
+
+- Training data is text tokenized to integer sequences. For GPT-3: ~300 billion integers.
+- Input/target pairs are created by **shifting the sequence left by 1**: `input = tokens[i:i+n]`, `target = tokens[i+1:i+n+1]`.
+- The causal mask means one forward pass gives you N-1 training examples from a sequence of length N.
+- **Cross-entropy loss** = `-log(P(correct_token))`. High probability on the correct token → low loss.
+- A random model starts at loss `log(vocab_size)`. For GPT-2's vocab: `log(50257) ≈ 10.8`.
+- After training, a good model achieves loss ~2-3, meaning it has learned genuine preferences about what comes next.

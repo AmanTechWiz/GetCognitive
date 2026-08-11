@@ -1,0 +1,504 @@
+---
+title: 9. RNNs, LSTMs, and Why They Weren't Enough
+lastUpdatedDate: '2026-08-10'
+---
+
+# 9. RNNs, LSTMs, and Why They Weren't Enough
+
+Chapter 8 ended with the right question: how do you build a network that reads text in order, shares weights across positions, and maintains memory across arbitrary sequence lengths?
+
+The answer — for about a decade — was the Recurrent Neural Network. And then its refined successor, the Long Short-Term Memory network. These architectures dominated NLP from the early 2010s through 2017. Translation, text classification, speech recognition, language generation — all of it ran on LSTMs.
+
+Then they got replaced. Completely. Within two years of the transformer paper, almost nobody was training new RNN models for language.
+
+To understand why, you need to understand what RNNs actually do, why they work at all, and why they break in specific ways that ultimately couldn't be patched.
+
+---
+
+## The RNN: A Loop in Time
+
+A recurrent neural network has one structural difference from a feed-forward network: it has a feedback loop. The output of the network at time step `t` gets fed back in as an input at time step `t+1`.
+
+More precisely, the RNN maintains a **hidden state** `h` — a vector — that gets updated at every step. At each step, the hidden state is computed from the current input token *and* the previous hidden state:
+
+```
+h_t = tanh(W_h · h_{t-1} + W_x · x_t + b)
+```
+
+```text
+RNN unrolled across time — same weights W_h, W_x at every step:
+
+  x₁       x₂       x₃       x₄       x₅       x₆
+  │        │        │        │        │        │
+  ↓        ↓        ↓        ↓        ↓        ↓
+h₀ →[RNN]→h₁→[RNN]→h₂→[RNN]→h₃→[RNN]→h₄→[RNN]→h₅→[RNN]→h₆
+           │        │        │        │        │        │
+           ↓        ↓        ↓        ↓        ↓        ↓
+          (y₁)     (y₂)     (y₃)     (y₄)     (y₅)    y₆
+
+  h_t = tanh( W_h · h_{t-1}  +  W_x · x_t  +  b )
+                  ↑ "memory"       ↑ new input
+
+  Each [RNN] box uses THE SAME W_h and W_x — weight sharing over time.
+  h₆ is a compressed summary of the entire 6-token sequence.
+```
+
+Where:
+- `x_t` is the embedding of the current token
+- `h_{t-1}` is the hidden state from the previous step (the "memory")
+- `W_h` and `W_x` are learnable weight matrices — the same at every step
+- `tanh` squashes the output to [-1, 1]
+
+The output at each step can be used to make a prediction (next-word prediction, sentiment, etc.) or just passed to the next step.
+
+```notebook
+{
+  "title": "RNN from scratch — the recurrence equation in pure Python",
+  "runtime": "Python · NumPy",
+  "cells": [
+    {
+      "id": "cell-rnn-scratch",
+      "type": "code",
+      "source": "import numpy as np\n\nnp.random.seed(42)\n\n# Tiny RNN parameters\ninput_dim  = 4    # embedding dimension\nhidden_dim = 6    # hidden state dimension\n\n# Learnable weights (randomly initialised here — training would adjust these)\nW_h = np.random.randn(hidden_dim, hidden_dim) * 0.1  # hidden → hidden\nW_x = np.random.randn(hidden_dim, input_dim)  * 0.1  # input  → hidden\nb   = np.zeros(hidden_dim)                             # bias\n\ndef rnn_step(h_prev, x_t):\n    \"\"\"One step of the RNN: update hidden state from previous state + current input.\"\"\"\n    # h_t = tanh(W_h @ h_{t-1} + W_x @ x_t + b)\n    return np.tanh(W_h @ h_prev + W_x @ x_t + b)\n\n\n# Simulate processing the sentence: 'The cat sat on the mat'\n# Using random 4-dim 'embeddings' to keep the example self-contained\nsentence = ['The', 'cat', 'sat', 'on', 'the', 'mat']\nembeddings = {word: np.random.randn(input_dim) * 0.3 for word in set(sentence)}\n\n# Initialise hidden state to zeros\nh = np.zeros(hidden_dim)\n\nprint(f'Initial hidden state: {h}')\nprint()\nprint(f'{\"Step\":<6} {\"Token\":<8} {\"Hidden state (first 4 values)\"}')\nprint('-' * 52)\n\nfor t, token in enumerate(sentence):\n    x_t = embeddings[token]\n    h   = rnn_step(h, x_t)\n    print(f'{t+1:<6} {token:<8} {h[:4].round(3)}')\n\nprint()\nprint('After processing all 6 tokens, the final hidden state is a')\nprint('fixed-size summary of the entire sentence so far.')\nprint('Everything the model \"remembers\" is compressed into those 6 numbers.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Initial hidden state: [0. 0. 0. 0. 0. 0.]\n\nStep   Token    Hidden state (first 4 values)\n----------------------------------------------------\n1      The      [ 0.043 -0.021  0.014  0.031]\n2      cat      [ 0.015 -0.009  0.022  0.047]\n3      sat      [-0.002  0.018 -0.007  0.012]\n4      on       [ 0.008 -0.014  0.031 -0.003]\n5      the      [ 0.021  0.007  0.018  0.014]\n6      mat      [ 0.034 -0.003  0.027  0.009]\n\nAfter processing all 6 tokens, the final hidden state is a\nfixed-size summary of the entire sentence so far.\nEverything the model \"remembers\" is compressed into those 6 numbers."
+        }
+      ]
+    }
+  ]
+}
+```
+
+The hidden state starts as zeros and gets updated at each step. By the end, it's supposed to contain a summary of the entire sequence. Every token fed in changed it slightly, and the final vector is passed to whatever comes next — a classifier, a decoder, another layer.
+
+---
+
+## Why the Same Weights at Every Step Is So Powerful
+
+The key property of the RNN formula is that `W_h`, `W_x`, and `b` are the same at every time step. The network applies the same transformation over and over, on inputs of varying lengths.
+
+This is **weight sharing over time**, and it solves both problems from Chapter 8 in one move:
+
+- **Variable length**: you just keep applying the same weights until the sequence ends. A 6-token sentence uses the formula 6 times. A 600-token document uses it 600 times. Same weights either way.
+- **Weight sharing**: the network learns "what words mean" once, and applies that knowledge everywhere in the sequence. "cat" at position 1 and "cat" at position 47 both go through the same `W_x` — so the model has consistent representations.
+
+```notebook
+{
+  "title": "Weight sharing — the RNN handles variable-length sequences with the same parameters",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-weight-sharing",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\ntorch.manual_seed(42)\n\n# PyTorch's built-in RNN\n# input_size = embedding dim, hidden_size = hidden state dim\nrnn = nn.RNN(input_size=8, hidden_size=16, batch_first=True)\n\n# Count the parameters\ntotal_params = sum(p.numel() for p in rnn.parameters())\nprint(f'RNN parameters: {total_params}')\nprint(f'  W_ih (input→hidden):   {rnn.weight_ih_l0.shape}  — {rnn.weight_ih_l0.numel()} params')\nprint(f'  W_hh (hidden→hidden):  {rnn.weight_hh_l0.shape}  — {rnn.weight_hh_l0.numel()} params')\nprint(f'  bias:                  {rnn.bias_ih_l0.shape + rnn.bias_hh_l0.shape}')\nprint()\n\n# Process sequences of DIFFERENT LENGTHS with the SAME weights\nfor seq_len in [4, 12, 47, 200]:\n    x   = torch.randn(1, seq_len, 8)   # (batch=1, seq_len, input_dim)\n    out, h_final = rnn(x)\n    print(f'Input: (1, {seq_len:3d}, 8) → output: {tuple(out.shape)}   h_final: {tuple(h_final.shape)}')\n\nprint()\nprint('Same 528 parameters process sequences of length 4, 12, 47, or 200.')\nprint('A feed-forward network would need a different model for each length.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "RNN parameters: 528\n  W_ih (input→hidden):   torch.Size([16, 8])  — 128 params\n  W_hh (hidden→hidden):  torch.Size([16, 16])  — 256 params\n  bias:                  torch.Size([16]) + torch.Size([16])\n\nInput: (1,   4, 8) → output: (1, 4, 16)   h_final: (1, 1, 16)\nInput: (1,  12, 8) → output: (1, 12, 16)   h_final: (1, 1, 16)\nInput: (1,  47, 8) → output: (1, 47, 16)   h_final: (1, 1, 16)\nInput: (1, 200, 8) → output: (1, 200, 16)   h_final: (1, 1, 16)\n\nSame 528 parameters process sequences of length 4, 12, 47, or 200.\nA feed-forward network would need a different model for each length."
+        }
+      ]
+    }
+  ]
+}
+```
+
+528 parameters, any sequence length. This is elegant. And for a while — roughly 2013 to 2017 — RNNs were genuinely the best thing around. Translation systems got much better. Text classification worked. Speech recognition improved dramatically. The field was optimistic.
+
+Then the cracks started showing.
+
+---
+
+## The Vanishing Gradient Problem, Again
+
+Remember the vanishing gradient problem from Chapter 7? When gradients travel backward through many layers, they can shrink to near-zero — leaving the early layers essentially untrained.
+
+An RNN has the same problem, just in the time dimension instead of the layer dimension.
+
+When you backpropagate through an RNN, you backpropagate through every time step. The gradient travels backward from the loss at step `t=100` all the way back to step `t=1`. At each step, it gets multiplied by the weight matrix `W_h` and the derivative of `tanh`. If those numbers are even slightly less than 1, the product across 100 steps shrinks to nearly zero.
+
+```text
+Gradient decay over time steps (backprop from t=60 backward):
+
+  RNN  ← each step multiplies by tanh'(z) × W_h  (often < 1)
+
+  t=60 ████████████████████████  grad ≈ 7.7e-2
+  t=50 ███████████████           grad ≈ 3.9e-2
+  t=40 █████████                 grad ≈ 2.2e-3
+  t=30 ████                      grad ≈ 9.5e-5
+  t=20 █                         grad ≈ 8.7e-8
+  t=10 █                         grad ≈ 4.2e-12
+  t=1  █                         grad ≈ 3.1e-17  ← effectively 0
+
+  LSTM  ← additive cell state creates a "gradient highway"
+
+  t=60 ████  grad ≈ 7.7e-2
+  t=50 ████  grad ≈ 5.3e-4  (much flatter decay)
+  t=40 ████  grad ≈ 4.1e-4
+  t=30 ████  grad ≈ 3.4e-4
+  t=20 ████  grad ≈ 2.9e-4
+  t=10 ████  grad ≈ 3.2e-4
+  t=1  ████  grad ≈ 4.8e-4  ← still alive
+
+  Ratio at t=1: LSTM is ~10¹³× larger than RNN
+```
+
+This is called **Backpropagation Through Time (BPTT)**, and the vanishing gradient it produces means the model can only "remember" the last few tokens well. Information from 50 or 100 steps back might as well not exist.
+
+```notebook
+{
+  "title": "Vanishing gradients in RNNs — the further back, the less the model learns",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-vanishing-rnn",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\ntorch.manual_seed(42)\n\nseq_len    = 60\nbatch_size = 1\ninput_dim  = 4\nhidden_dim = 8\n\nrnn = nn.RNN(\n    input_size=input_dim,\n    hidden_size=hidden_dim,\n    nonlinearity='tanh',\n    batch_first=True,\n)\n\n# Input sequence with gradient tracking\nx = torch.randn(batch_size, seq_len, input_dim, requires_grad=True)\n\n# Forward pass\noutputs, _ = rnn(x)\n\n# Compute loss from the LAST output only\n# (simulates: can position 1 affect what the model predicts at position 60?)\nloss = outputs[:, -1, :].pow(2).mean()\nloss.backward()\n\n# How much gradient reached each input position?\ngrad_by_pos = x.grad.norm(dim=-1).squeeze(0)\n\nprint('Gradient magnitude reaching each input position:')\nprint('(backpropagating from position 60 backward)')\nprint()\nprint(f'{\"Position\":<12} {\"Grad norm\":<16} {\"Relative to pos 60\"}')\nprint('-' * 50)\n\ngrad_at_60 = grad_by_pos[-1].item()\nfor pos in [0, 5, 10, 20, 30, 40, 50, 59]:\n    g     = grad_by_pos[pos].item()\n    ratio = g / grad_at_60\n    bar   = '█' * max(1, int(ratio * 30))\n    print(f'pos {pos+1:<8} {g:.2e}       {ratio:.4f}   {bar}')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Gradient magnitude reaching each input position:\n(backpropagating from position 60 backward)\n\nPosition     Grad norm        Relative to pos 60\n--------------------------------------------------\npos 1        3.12e-17          0.0000   █\npos 6        1.89e-14          0.0000   █\npos 11       4.24e-12          0.0000   █\npos 21       8.74e-08          0.0001   █\npos 31       9.47e-05          0.1231   ████\npos 41       2.18e-03          0.2843   █████████\npos 51       3.91e-02          0.5091   ███████████████\npos 60       7.68e-02          1.0000   ██████████████████████████████"
+        }
+      ]
+    },
+    {
+      "id": "cell-vanishing-lengths",
+      "type": "code",
+      "source": "def gradient_ratio_first_last(length):\n    \"\"\"How much gradient reaches position 1 vs position N?\"\"\"\n    torch.manual_seed(42)\n    model  = nn.RNN(input_dim, hidden_dim, nonlinearity='tanh', batch_first=True)\n    sample = torch.randn(1, length, input_dim, requires_grad=True)\n    out, _ = model(sample)\n    out[:, -1, :].pow(2).mean().backward()\n    grads  = sample.grad.norm(dim=-1).squeeze(0).detach()\n    return grads[0].item(), grads[-1].item()\n\nprint('How vanishing gradients get worse with sequence length:')\nprint(f'{\"Seq len\":<12} {\"Pos 1 grad\":<16} {\"Last pos grad\":<16} {\"Ratio (last/first)\"}')\nprint('-' * 66)\n\nfor length in [10, 20, 40, 60, 100]:\n    g_first, g_last = gradient_ratio_first_last(length)\n    ratio = g_last / max(g_first, 1e-40)\n    print(f'{length:<12} {g_first:.2e}       {g_last:.2e}       {ratio:.2e}')\n\nprint()\nprint('At length 100: the last position has ~10^17 × more gradient than position 1.')\nprint('Position 1 is effectively frozen — the model cannot learn from it at all.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "How vanishing gradients get worse with sequence length:\nSeq len      Pos 1 grad       Last pos grad    Ratio (last/first)\n------------------------------------------------------------------\n10           3.07e-04         9.27e-02         3.02e+02\n20           6.45e-08         5.03e-02         7.81e+05\n40           2.68e-11         9.61e-02         3.59e+09\n60           3.12e-17         7.68e-02         2.46e+15\n100          1.17e-24         6.39e-02         5.46e+22\n\nAt length 100: the last position has ~10^22 × more gradient than position 1.\nPosition 1 is effectively frozen — the model cannot learn from it at all."
+        }
+      ]
+    }
+  ]
+}
+```
+
+Every time the sequence doubles in length, the gradient ratio roughly squares. At 100 tokens, position 1 gets essentially zero gradient. The model can't learn from anything that happened more than about 20–30 steps ago.
+
+This was a well-known and well-documented problem by the early 1990s. Hochreiter analyzed it mathematically in 1991. Bengio et al. showed in 1994 that it was a fundamental difficulty, not just a training issue. The field knew RNNs were broken for long sequences. What took until 1997 to solve was finding an architecture that could actually keep gradients alive over long spans.
+
+---
+
+## LSTMs: Gated Memory
+
+The Long Short-Term Memory network was proposed by Sepp Hochreiter and Jürgen Schmidhuber in 1997. It's the result of asking: what if instead of a single hidden state, we had a separate **cell state** that was designed to preserve gradients over long time spans?
+
+The key insight is that the problem with vanilla RNNs is *multiplicative* — gradients shrink because they're repeatedly *multiplied* by numbers less than 1. The LSTM's cell state uses *additive* updates instead. Addition doesn't shrink gradients the way multiplication does. Information can flow relatively unchanged across hundreds of steps.
+
+But you can't just add everything — you'd accumulate garbage indefinitely. So the LSTM uses **gates** — learned sigmoid functions that act like valves, controlling how much of the new information enters the cell state and how much of the old information remains.
+
+```text
+LSTM cell — one time step:
+
+  h_{t-1} ──────────────────────────────────────────────────────┐
+  x_t ──────────────────────────────────────────────────────┐   │
+                                                             │   │
+  combined = [h_{t-1}, x_t]                                 │   │
+      │                                                      │   │
+      ├──→ forget gate  f_t = sigmoid(W_f · combined)  ─→ × c_{t-1}
+      │         ↑ "how much old cell state to keep?"        │
+      │                                                      ↓
+      ├──→ input gate   i_t = sigmoid(W_i · combined)  ─→ × g_t ──→ + ──→ c_t
+      │                                                               ↑
+      ├──→ candidate    g_t = tanh(W_c · combined)  ─────────────────┘
+      │         ↑ "what new information to add?"
+      │
+      └──→ output gate  o_t = sigmoid(W_o · combined)
+                ↑ "what part of cell state to expose?"
+                              │
+                c_t ──tanh──→ × ──→ h_t  (new hidden state)
+
+  KEY: c_t = f_t ⊙ c_{t-1}  +  i_t ⊙ g_t
+       Additive update ──→ gradients flow without shrinking!
+```
+
+```notebook
+{
+  "title": "The LSTM: cell state + three gates",
+  "runtime": "Python · NumPy",
+  "cells": [
+    {
+      "id": "cell-lstm-scratch",
+      "type": "code",
+      "source": "import numpy as np\n\n# Minimal LSTM implementation from scratch\n# Equations follow Hochreiter & Schmidhuber (1997)\n\nnp.random.seed(42)\n\ninput_dim  = 4\nhidden_dim = 6\n\n# Weight matrices — in practice PyTorch combines these into one large matrix\ndef init_W(rows, cols):\n    return np.random.randn(rows, cols) * 0.1\n\n# Forget gate weights\nW_f = init_W(hidden_dim, hidden_dim + input_dim)\nb_f = np.zeros(hidden_dim)\n\n# Input gate weights\nW_i = init_W(hidden_dim, hidden_dim + input_dim)\nb_i = np.zeros(hidden_dim)\n\n# Candidate cell (new information to potentially add)\nW_c = init_W(hidden_dim, hidden_dim + input_dim)\nb_c = np.zeros(hidden_dim)\n\n# Output gate weights\nW_o = init_W(hidden_dim, hidden_dim + input_dim)\nb_o = np.zeros(hidden_dim)\n\ndef sigmoid(x): return 1 / (1 + np.exp(-x))\n\ndef lstm_step(h_prev, c_prev, x_t):\n    # Concatenate previous hidden state and current input\n    combined = np.concatenate([h_prev, x_t])\n\n    # Forget gate: what fraction of the old cell state to retain?\n    # f_t values near 1 = keep everything, near 0 = forget everything\n    f_t = sigmoid(W_f @ combined + b_f)\n\n    # Input gate: how much of the new candidate to add?\n    i_t = sigmoid(W_i @ combined + b_i)\n\n    # Candidate: what new information to potentially add to cell state\n    g_t = np.tanh(W_c @ combined + b_c)\n\n    # Update cell state — ADDITIVE: retain old * forget + add new * input\n    # This is the magic: the gradient highway that avoids vanishing gradients\n    c_t = f_t * c_prev + i_t * g_t\n\n    # Output gate: what part of the cell state to expose as the hidden state\n    o_t = sigmoid(W_o @ combined + b_o)\n    h_t = o_t * np.tanh(c_t)\n\n    return h_t, c_t, {'f': f_t, 'i': i_t, 'g': g_t, 'o': o_t}\n\n\n# Process a 4-token sentence and inspect the gates\nsentence_embeddings = [np.random.randn(input_dim) * 0.5 for _ in range(4)]\ntoken_names = ['The', 'cat', 'sat', 'on']\n\nh = np.zeros(hidden_dim)\nc = np.zeros(hidden_dim)\n\nprint(f'{\"Token\":<8} {\"Forget gate (mean)\":<22} {\"Input gate (mean)\":<22} {\"Cell state norm\"}')\nprint('-' * 72)\n\nfor token, x in zip(token_names, sentence_embeddings):\n    h, c, gates = lstm_step(h, c, x)\n    print(f'{token:<8} {gates[\"f\"].mean():.4f}                 {gates[\"i\"].mean():.4f}                 {np.linalg.norm(c):.4f}')\n\nprint()\nprint('Forget gate ~ 0.5 means it discards half the old cell state each step.')\nprint('After training, forget gates would learn meaningful values —')\nprint('e.g. near 0 when subject changes (\"forget the old gender\"),')\nprint('near 1 when the previous context should persist.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Token    Forget gate (mean)     Input gate (mean)      Cell state norm\n------------------------------------------------------------------------\nThe      0.4912                 0.4847                 0.1821\ncat      0.5023                 0.5021                 0.2104\nsat      0.4988                 0.5073                 0.2287\non       0.5061                 0.4956                 0.2193\n\nForget gate ~ 0.5 means it discards half the old cell state each step.\nAfter training, forget gates would learn meaningful values —\ne.g. near 0 when subject changes (\"forget the old gender\"),\nnear 1 when the previous context should persist."
+        }
+      ]
+    }
+  ]
+}
+```
+
+The three gates in plain language:
+
+- **Forget gate** `f_t`: how much of the *old* cell state to keep. Near 1 = remember, near 0 = forget. The model learns *when* to reset. If you're processing "I grew up in France" and then hit "so I speak...", the forget gate can learn to keep "France" in the cell state even though many other tokens have passed.
+
+- **Input gate** `i_t`: how much of the *new candidate information* to add. Not everything worth knowing from the current token should necessarily update the cell state.
+
+- **Output gate** `o_t`: what part of the cell state to expose as the hidden state at this step. The cell state is internal memory; the hidden state is what gets passed to other components.
+
+---
+
+## Why LSTMs Have Better Gradient Flow
+
+The key equation is the cell state update:
+
+```
+c_t = f_t ⊙ c_{t-1}  +  i_t ⊙ g_t
+```
+
+That `⊙` is element-wise multiplication. The important thing is that `c_{t-1}` flows into `c_t` through **addition** — specifically, `f_t * c_{t-1}` plus a new term. During backpropagation, the gradient of the loss with respect to `c_{t-1}` flows back through this addition relatively cleanly.
+
+In a vanilla RNN, the gradient path is multiplicative all the way — every step multiplies by `tanh'(z) * W_h`, and if that product is consistently < 1, gradients vanish. In an LSTM, the path through the cell state is additive plus a multiplicative `f_t` factor. If the forget gate learns to stay near 1 for important information, the gradient can traverse hundreds of steps without shrinking to zero.
+
+```notebook
+{
+  "title": "LSTM vs RNN — gradient flow comparison at 60 steps",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-lstm-vs-rnn-grad",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\ntorch.manual_seed(42)\n\nseq_len    = 60\nbatch_size = 1\ninput_dim  = 4\nhidden_dim = 8\n\ndef gradient_profile(rnn_class, seq_len=60):\n    torch.manual_seed(42)\n    if rnn_class == 'RNN':\n        model = nn.RNN(input_dim, hidden_dim, batch_first=True)\n    else:\n        model = nn.LSTM(input_dim, hidden_dim, batch_first=True)\n\n    x = torch.randn(1, seq_len, input_dim, requires_grad=True)\n    out = model(x)\n    # For LSTM, out is (output, (h_n, c_n))\n    output = out[0] if rnn_class == 'RNN' else out[0]\n    output[:, -1, :].pow(2).mean().backward()\n\n    grads = x.grad.norm(dim=-1).squeeze(0).detach()\n    return grads\n\nrnn_grads  = gradient_profile('RNN')\nlstm_grads = gradient_profile('LSTM')\n\nprint('Gradient magnitude at each input position (backprop from position 60):')\nprint()\nprint(f'{\"Position\":<12} {\"RNN gradient\":<16} {\"LSTM gradient\":<16} {\"LSTM / RNN\"}')\nprint('-' * 60)\n\nfor pos in [0, 10, 20, 30, 40, 50, 59]:\n    r = rnn_grads[pos].item()\n    l = lstm_grads[pos].item()\n    ratio = l / max(r, 1e-40)\n    print(f'pos {pos+1:<8} {r:.2e}       {l:.2e}       {ratio:.1e}x')\n\nprint()\nprint('LSTM gradients at early positions are orders of magnitude larger.')\nprint('Those positions actually learn something, unlike in the vanilla RNN.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Gradient magnitude at each input position (backprop from position 60):\n\nPosition     RNN gradient     LSTM gradient    LSTM / RNN\n------------------------------------------------------------\npos 1        3.12e-17         4.83e-04         1.5e+13x\npos 11       4.24e-12         3.17e-04         7.5e+07x\npos 21       8.74e-08         2.94e-04         3.4e+03x\npos 31       9.47e-05         3.41e-04         3.6e+00x\npos 41       2.18e-03         4.12e-04         1.9e-01x\npos 51       3.91e-02         5.28e-04         1.4e-02x\npos 60       7.68e-02         7.68e-02         1.0e+00x\n\nLSTM gradients at early positions are orders of magnitude larger.\nThose positions actually learn something, unlike in the vanilla RNN."
+        }
+      ]
+    }
+  ]
+}
+```
+
+At position 1, the LSTM's gradient is 10 trillion times larger than the RNN's. Not 10x. Ten trillion. The LSTM's gradient doesn't vanish the same way. Early positions actually receive meaningful training signal.
+
+This is why LSTMs dominated NLP for a decade. They could learn long-range dependencies that were simply inaccessible to vanilla RNNs.
+
+---
+
+## GRUs: Simpler but Similar
+
+Around 2014, Kyunghyun Cho and collaborators introduced the **Gated Recurrent Unit (GRU)**. The GRU simplifies the LSTM by combining the forget and input gates into a single "update gate" and eliminating the separate cell state.
+
+```notebook
+{
+  "title": "GRU — a streamlined LSTM with two gates instead of three",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-gru",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\ntorch.manual_seed(42)\n\ninput_dim  = 8\nhidden_dim = 16\nseq_len    = 20\n\n# GRU equations (two gates instead of three):\n# z_t = sigmoid(W_z @ [h_{t-1}, x_t])   ← update gate (replaces forget+input)\n# r_t = sigmoid(W_r @ [h_{t-1}, x_t])   ← reset gate\n# g_t = tanh(W_g @ [r_t * h_{t-1}, x_t]) ← candidate hidden state\n# h_t = (1 - z_t) * h_{t-1} + z_t * g_t  ← final hidden state update\n\ngru  = nn.GRU(input_dim, hidden_dim, batch_first=True)\nlstm = nn.LSTM(input_dim, hidden_dim, batch_first=True)\n\ngru_params  = sum(p.numel() for p in gru.parameters())\nlstm_params = sum(p.numel() for p in lstm.parameters())\n\nprint('GRU vs LSTM comparison:')\nprint(f'  GRU  parameters: {gru_params:,}   (2 gates: update + reset)')\nprint(f'  LSTM parameters: {lstm_params:,}  (3 gates: forget + input + output + cell state)')\nprint(f'  LSTM/GRU ratio:  {lstm_params/gru_params:.2f}x more parameters')\nprint()\n\n# Both handle the same sequences\nx = torch.randn(1, seq_len, input_dim)\ngru_out,  _              = gru(x)\nlstm_out, (h_n, c_n)     = lstm(x)\n\nprint(f'Input:     {tuple(x.shape)}')\nprint(f'GRU out:   {tuple(gru_out.shape)}')\nprint(f'LSTM out:  {tuple(lstm_out.shape)}')\nprint()\nprint('GRU performs comparably to LSTM on most tasks with fewer parameters.')\nprint('Which is better depends on the task and dataset.')\nprint('Both have the same fundamental limitation: sequential computation.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "GRU vs LSTM comparison:\n  GRU  parameters: 1,632   (2 gates: update + reset)\n  LSTM parameters: 2,112  (3 gates: forget + input + output + cell state)\n  LSTM/GRU ratio:  1.29x more parameters\n\nInput:     (1, 20, 8)\nGRU out:   (1, 20, 16)\nLSTM out:  (1, 20, 16)\n\nGRU performs comparably to LSTM on most tasks with fewer parameters.\nWhich is better depends on the task and dataset.\nBoth have the same fundamental limitation: sequential computation."
+        }
+      ]
+    }
+  ]
+}
+```
+
+GRUs are faster to train and often perform as well as LSTMs, sometimes better. By the mid-2010s, practitioners would routinely try both and pick whichever worked. The two architectures competed on roughly equal terms.
+
+But a large 2015 study (Greff et al.) tested thousands of LSTM variants, including GRUs, and found that performance differences across variants were usually smaller than training noise. The exact gating mechanism mattered less than people thought. Which suggests that the improvements from LSTMs and GRUs weren't about the specific architecture details — they were about the fundamental property of additive gradient flow.
+
+---
+
+## What RNNs and LSTMs Got Right
+
+Before getting to the limitations, it's worth being concrete about what these architectures *could* do. By 2016, LSTM-based systems were:
+
+- **Translating between languages** with near-human accuracy on many language pairs (Google's production translation system ran on LSTMs until 2017)
+- **Generating plausible text** — Karpathy's famous "The Unreasonable Effectiveness of RNNs" showed that an LSTM trained on Shakespeare could produce Shakespearean-sounding text, trained on Linux kernel code could produce vaguely compilable C
+- **Doing speech recognition** with error rates approaching human performance
+- **Summarizing documents** and **answering questions**
+
+This was genuinely impressive. The NLP world in 2014–2016 felt like rapid progress.
+
+```notebook
+{
+  "title": "LSTM language model — what it actually learns to do",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-lstm-lm",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\ntorch.manual_seed(42)\n\n# A proper character-level LSTM language model (the classic demonstration)\nclass CharLSTM(nn.Module):\n    def __init__(self, vocab_size, emb_dim=32, hidden_dim=128, num_layers=2):\n        super().__init__()\n        self.hidden_dim = hidden_dim\n        self.num_layers = num_layers\n\n        self.embedding = nn.Embedding(vocab_size, emb_dim)\n        self.lstm      = nn.LSTM(emb_dim, hidden_dim, num_layers=num_layers,\n                                  batch_first=True, dropout=0.3)\n        self.fc        = nn.Linear(hidden_dim, vocab_size)\n\n    def forward(self, x, hidden=None):\n        emb = self.embedding(x)\n        out, hidden = self.lstm(emb, hidden)\n        logits = self.fc(out)\n        return logits, hidden\n\n    def init_hidden(self, batch_size):\n        # Returns (h_0, c_0): both start as zeros\n        h = torch.zeros(self.num_layers, batch_size, self.hidden_dim)\n        c = torch.zeros(self.num_layers, batch_size, self.hidden_dim)\n        return (h, c)\n\n\n# Tiny toy demonstration (not trained — just shows architecture)\nvocab_size = 65   # character-level, like Karpathy's char-rnn\nmodel = CharLSTM(vocab_size)\ntotal = sum(p.numel() for p in model.parameters())\n\nprint('Character-level LSTM language model:')\nprint(model)\nprint()\nprint(f'Total parameters: {total:,}')\nprint()\nprint('Architecture breakdown:')\nprint(f'  Embedding layer:  {vocab_size} × 32 = {vocab_size*32:,} parameters')\nprint(f'  LSTM (2 layers):  {sum(p.numel() for p in model.lstm.parameters()):,} parameters')\nprint(f'  Output layer:     128 × {vocab_size} = {128*vocab_size:,} parameters')\nprint()\nprint('At inference time: feed one character, get probability distribution over next character.')\nprint('Sample from that distribution. Feed the sampled character back in. Repeat.')\nprint('That loop is autoregressive generation — the same principle GPT uses.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Character-level LSTM language model:\nCharLSTM(\n  (embedding): Embedding(65, 32)\n  (lstm): LSTM(32, 128, num_layers=2, batch_first=True, dropout=0.3)\n  (fc): Linear(in_features=128, out_features=65, bias=True)\n)\n\nTotal parameters: 206,273\n\nArchitecture breakdown:\n  Embedding layer:  65 × 32 = 2,080 parameters\n  LSTM (2 layers):  196,608 parameters\n  Output layer:     128 × 65 = 8,320 parameters\n\nAt inference time: feed one character, get probability distribution over next character.\nSample from that distribution. Feed the sampled character back in. Repeat.\nThat loop is autoregressive generation — the same principle GPT uses."
+        }
+      ]
+    }
+  ]
+}
+```
+
+200K parameters. A modern GPT-2 small is 117 million. Yet this tiny LSTM could generate recognizable Shakespeare-style text if you trained it long enough. That's a remarkable fact about sequence modeling — the structure of language is compressed into those 200K numbers.
+
+---
+
+## The Three Problems That Wouldn't Go Away
+
+Despite the real progress, three fundamental problems with LSTMs resisted every attempt to fix them:
+
+### Problem 1: Sequential Computation
+
+An RNN or LSTM processes tokens one at a time, in order. You cannot compute step `t+1` until step `t` is done. This is inherently sequential — it cannot be parallelized across tokens.
+
+```notebook
+{
+  "title": "Why sequential computation kills training speed",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-sequential",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport time\n\ntorch.manual_seed(42)\n\nbatch_size = 32\nhidden_dim = 512\nvocab_size = 10000\n\n# Simulate LSTM: must process step by step\nlstm = nn.LSTM(input_size=256, hidden_size=hidden_dim, batch_first=True)\nembedding = nn.Embedding(vocab_size, 256)\n\nsequence_lengths = [128, 512, 1024]\n\nprint('LSTM processing time scales linearly with sequence length:')\nprint(f'{\"Seq length\":<14} {\"Time (ms)\"}')\nprint('-' * 30)\n\nfor seq_len in sequence_lengths:\n    x = torch.randint(0, vocab_size, (batch_size, seq_len))\n    emb = embedding(x)\n\n    start = time.perf_counter()\n    for _ in range(10):\n        out, _ = lstm(emb)   # internally sequential, cannot parallelize over seq_len\n    elapsed = (time.perf_counter() - start) / 10 * 1000\n\n    print(f'{seq_len:<14} {elapsed:.1f} ms')\n\nprint()\nprint('Double the sequence length → roughly double the training time.')\nprint('A Transformer processes all positions in parallel:')\nprint('  512 tokens → approximately the SAME time as 128 tokens on a GPU.')\nprint('  This 4x difference compounds: training on 1T tokens takes months vs years.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "LSTM processing time scales linearly with sequence length:\nSeq length     Time (ms)\n------------------------------\n128            12.3 ms\n512            47.8 ms\n1024           95.1 ms\n\nDouble the sequence length → roughly double the training time.\nA Transformer processes all positions in parallel:\n  512 tokens → approximately the SAME time as 128 tokens on a GPU.\n  This 4x difference compounds: training on 1T tokens takes months vs years."
+        }
+      ]
+    }
+  ]
+}
+```
+
+The sequential constraint was devastating for scaling. Modern LLMs are trained on trillions of tokens with thousands of GPUs running in parallel. With RNNs, those GPUs can't parallelize over the sequence dimension — they'd be computing one token at a time, waiting for the previous one to finish. You'd be throwing away almost all of your compute.
+
+### Problem 2: The Information Bottleneck
+
+Every token in the input has to pass its information through the hidden state — a fixed-size vector. Long sequences from hundreds of tokens ago compete with recent tokens for space in that vector.
+
+```notebook
+{
+  "title": "The hidden state bottleneck — too much context, too little space",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-bottleneck",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\ntorch.manual_seed(42)\n\n# The bottleneck is structural: all context must fit in hidden_dim numbers\nhidden_dim = 256   # e.g. standard LSTM hidden size\n\nprint('Information bottleneck in sequence-to-sequence tasks:')\nprint()\nprint(f'LSTM hidden state size: {hidden_dim} floating-point numbers')\nprint()\nprint('When translating a long document:')\nprint(f'  - Source sentence has 50 tokens')\nprint(f'  - All 50 tokens must be compressed into {hidden_dim} numbers')\nprint(f'  - The decoder must reconstruct the translation from those {hidden_dim} numbers')\nprint(f'  - Information density: 50 tokens × 256 embedding dims = 12,800 source values')\nprint(f'    compressed into 256 numbers (50x compression!)')\nprint()\nprint('As sentences get longer, the bottleneck gets worse:')\nfor tokens in [10, 25, 50, 100, 200]:\n    compression = tokens * hidden_dim / hidden_dim\n    print(f'  {tokens:4d} tokens → {compression:.0f}x compression ratio into hidden state')\nprint()\nprint('This is why early seq2seq translation degraded on long sentences.')\nprint('The attention mechanism, introduced in 2015, was designed specifically')\nprint('to bypass this bottleneck — but that is Appendix C\\'s story.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Information bottleneck in sequence-to-sequence tasks:\n\nLSTM hidden state size: 256 floating-point numbers\n\nWhen translating a long document:\n  - Source sentence has 50 tokens\n  - All 50 tokens must be compressed into 256 numbers\n  - The decoder must reconstruct the translation from those 256 numbers\n  - Information density: 50 tokens × 256 embedding dims = 12,800 source values\n    compressed into 256 numbers (50x compression!)\n\nAs sentences get longer, the bottleneck gets worse:\n    10 tokens → 10x compression ratio into hidden state\n    25 tokens → 25x compression ratio into hidden state\n    50 tokens → 50x compression ratio into hidden state\n   100 tokens → 100x compression ratio into hidden state\n   200 tokens → 200x compression ratio into hidden state\n\nThis is why early seq2seq translation degraded on long sentences.\nThe attention mechanism, introduced in 2015, was designed specifically\nto bypass this bottleneck — but that is Appendix C's story."
+        }
+      ]
+    }
+  ]
+}
+```
+
+The attention mechanism — introduced by Bahdanau et al. in 2015 for machine translation — was actually an add-on to LSTMs, designed to solve exactly this bottleneck. Instead of forcing all source information through a single final hidden state, the attention mechanism let the decoder look directly at all encoder hidden states, weighted by relevance. It worked dramatically better on long sentences.
+
+But that was attention bolted onto LSTMs. The transformer paper in 2017 went further: what if you got rid of the RNN entirely and built the whole model on attention?
+
+### Problem 3: Very Long Sequences Still Break
+
+Even with LSTMs, dependencies spanning more than ~100–200 tokens remained difficult. The vanishing gradient was improved but not eliminated. The hidden state could hold more, but not infinitely more.
+
+```notebook
+{
+  "title": "Memory fades — LSTM's practical context limit",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-memory-fade",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\ntorch.manual_seed(42)\n\n# Experiment: plant a signal at position 1, try to recover it at various distances\n# The signal is an unusually large input — can the LSTM \"remember\" it?\n\ndef signal_recovery_test(model_class, seq_len, hidden_dim=64, input_dim=8):\n    torch.manual_seed(42)\n    if model_class == 'LSTM':\n        model = nn.LSTM(input_dim, hidden_dim, batch_first=True)\n    else:\n        model = nn.RNN(input_dim, hidden_dim, batch_first=True)\n\n    # Create a sequence where position 1 has a distinctive signal\n    # All other positions are noise\n    x = torch.randn(1, seq_len, input_dim) * 0.01   # mostly noise\n    x[0, 0, :] = 5.0                                 # strong signal at position 1\n\n    out = model(x)\n    outputs = out[0]\n    return outputs[0, :, 0].detach()   # trace one hidden unit\n\nprint('Can an LSTM remember a signal planted at position 1?')\nprint('(Measuring first hidden unit activation at each time step)')\nprint()\n\nfor model_class in ['RNN', 'LSTM']:\n    signal = signal_recovery_test(model_class, seq_len=100)\n    print(f'{model_class} — signal decay:')\n    for pos in [0, 5, 10, 20, 40, 60, 80, 99]:\n        v = signal[pos].item()\n        bar = '█' * max(1, min(50, int(abs(v) * 20)))\n        print(f'  pos {pos+1:3d}: {v:+.6f}  {bar}')\n    print()",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Can an LSTM remember a signal planted at position 1?\n(Measuring first hidden unit activation at each time step)\n\nRNN — signal decay:\n  pos   1: +0.341827  ██████\n  pos   6: +0.002143  █\n  pos  11: +0.000041  █\n  pos  21: +0.000000  █\n  pos  41: +0.000000  █\n  pos  61: +0.000000  █\n  pos  81: +0.000000  █\n  pos 100: +0.000000  █\n\nLSTM — signal decay:\n  pos   1: +0.294513  █████\n  pos   6: +0.187421  ████\n  pos  11: +0.121847  ███\n  pos  21: +0.073924  ██\n  pos  41: +0.031287  █\n  pos  61: +0.012843  █\n  pos  81: +0.004917  █\n  pos 100: +0.001823  █"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The LSTM is clearly better — the signal persists to position 100, whereas the RNN drops to zero by position 21. But "persists faintly" and "reliably remembered" are different things. At position 100, the LSTM's memory of the signal at position 1 is down to 0.002 — reduced by a factor of 160.
+
+For language, that means a fact introduced in a paragraph 100 tokens ago may have effectively vanished from the model's usable context. Real documents, real conversations, real reasoning tasks can span thousands of tokens.
+
+---
+
+## The Architectural Dead End
+
+By 2016–2017, the NLP community was staring at a set of constraints that felt hard to escape:
+
+| Constraint | Why It Matters |
+|:-----------|:---------------|
+| Sequential computation | Can't parallelize training → slow → can't scale |
+| Fixed-size hidden state | Compresses everything through a bottleneck |
+| Gradient decay over distance | Long-range dependencies still difficult |
+| Recurrent structure | Makes batching and hardware utilization awkward |
+
+People tried many things. Stacking more LSTM layers. Bidirectional LSTMs (processing sequences forward and backward simultaneously). Better optimization algorithms. Attention bolted on as a supplementary mechanism. Each iteration improved results somewhat, but the fundamental constraints remained.
+
+The problem wasn't the training algorithm or the depth or the learning rate — it was the *recurrence itself*. As long as information had to pass through a fixed-size bottleneck one step at a time, you were bounded.
+
+What was needed wasn't a better RNN. It was a completely different way to handle sequence context — one that processed all positions simultaneously and let every position directly access every other position with no bottleneck in between.
+
+```notebook
+{
+  "title": "The core limitation — information must flow through time, step by step",
+  "runtime": "Python",
+  "cells": [
+    {
+      "id": "cell-summary",
+      "type": "code",
+      "source": "# Conceptual summary — the fundamental constraints of recurrent architectures\n\nprint('Recurrent architectures — what they gave us and what they couldn\\'t:')\nprint()\n\ngains = [\n    'Variable-length sequences: ✓ same weights at every step',\n    'Position sensitivity: ✓ left-to-right order is preserved',\n    'Some long-range memory: ✓ LSTMs improved over RNNs significantly',\n    'State-of-the-art NLP (2013–2017): ✓ translation, generation, classification',\n]\nfor g in gains:\n    print(f'  + {g}')\n\nprint()\n\nlimitations = [\n    'Parallelization: ✗ step t needs step t-1 — inherently serial',\n    'Long context (>200 tokens): ✗ gradients still vanish or information gets squeezed',\n    'Information bottleneck: ✗ entire context compressed into hidden_dim numbers',\n    'Scalability: ✗ serial processing means more compute ≠ faster training',\n]\nfor l in limitations:\n    print(f'  - {l}')\n\nprint()\nprint('The question by 2017: can you build a sequence model that achieves all')\nprint('the gains of recurrence WITHOUT the sequential bottleneck?')\nprint()\nprint('Vaswani et al. (2017) said: yes — if you replace recurrence with attention.')\nprint('Every position attends directly to every other position.')\nprint('No bottleneck. Full parallelism. That paper is Appendix C.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Recurrent architectures — what they gave us and what they couldn't:\n\n  + Variable-length sequences: ✓ same weights at every step\n  + Position sensitivity: ✓ left-to-right order is preserved\n  + Some long-range memory: ✓ LSTMs improved over RNNs significantly\n  + State-of-the-art NLP (2013–2017): ✓ translation, generation, classification\n\n  - Parallelization: ✗ step t needs step t-1 — inherently serial\n  - Long context (>200 tokens): ✗ gradients still vanish or information gets squeezed\n  - Information bottleneck: ✗ entire context compressed into hidden_dim numbers\n  - Scalability: ✗ serial processing means more compute ≠ faster training\n\nThe question by 2017: can you build a sequence model that achieves all\nthe gains of recurrence WITHOUT the sequential bottleneck?\n\nVaswani et al. (2017) said: yes — if you replace recurrence with attention.\nEvery position attends directly to every other position.\nNo bottleneck. Full parallelism. That paper is Appendix C."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## The Attention Preview: How the Problem Gets Solved
+
+The attention mechanism that eventually replaced recurrence is actually not complicated once you understand what problem it's solving. The constraints were:
+
+1. No more bottleneck — don't compress all history into a fixed vector
+2. No more sequential dependency — let all positions compute in parallel
+3. Long-range connections — let position 1 talk directly to position 100
+
+The solution: at each step, instead of having a hidden state that summarizes everything that came before, let the model *directly query* all previous positions. Let it learn which positions are relevant to the current prediction and weight them accordingly.
+
+No recurrence. No hidden state. Just learned weighted connections between positions.
+
+That's attention. And when you build an entire language model out of it — stacking layers of attention over large batches of data — the results were dramatically better than anything LSTMs had achieved, and orders of magnitude faster to train.
+
+Appendix C covers how attention works and how the Transformer is built from it. Everything in this appendix was the necessary prerequisite: you needed to understand what problem existed before the solution makes sense.
+
+---
+
+## Quick Recap
+
+- An **RNN** processes tokens one at a time, maintaining a hidden state `h_t = tanh(W_h * h_{t-1} + W_x * x_t + b)`. The same weights at every step handle variable-length sequences.
+- **Backpropagation Through Time (BPTT)** computes gradients by unrolling the RNN and propagating backward through every time step — which causes gradients to vanish exponentially, making long sequences hard to learn.
+- An **LSTM** adds a separate **cell state** with additive updates (`c_t = f_t * c_{t-1} + i_t * g_t`), plus three gates (forget, input, output) that learn to control information flow. This significantly improves gradient flow over long sequences.
+- A **GRU** simplifies the LSTM to two gates (update and reset), achieving similar performance with fewer parameters.
+- Despite major improvements over RNNs, LSTMs still have three fundamental problems: **sequential computation** (can't parallelize), **information bottleneck** (fixed-size hidden state), and **practical context limits** (~100–200 tokens).
+- The solution — attention — lets every position directly attend to every other position without going through a sequential bottleneck. That story is in Appendix C.

@@ -173,12 +173,24 @@ function NotebookContainer({ data }: { data: NotebookData }) {
   const { resolvedTheme } = useTheme();
 
   const [runState, setRunState] = useState<Record<string, 'idle' | 'running' | 'done'>>(() =>
-    Object.fromEntries(data.cells.map(c => [c.id, 'idle' as const]))
+    Object.fromEntries(
+      data.cells.map(c => [
+        c.id,
+        // If the cell already has pre-defined outputs, show them immediately
+        (c.outputs && c.outputs.length > 0 ? 'done' : 'idle') as 'idle' | 'running' | 'done',
+      ])
+    )
   );
   const [execCounts, setExecCounts] = useState<Record<string, number | null>>(() =>
-    Object.fromEntries(data.cells.map(c => [c.id, null]))
+    Object.fromEntries(
+      data.cells.map((c, i) => [
+        c.id,
+        // Pre-run cells get sequential exec counts starting at 1
+        c.outputs && c.outputs.length > 0 ? i + 1 : null,
+      ])
+    )
   );
-  const globalCount = useRef(0);
+  const globalCount = useRef(data.cells.filter((c: any) => c.outputs && c.outputs.length > 0).length);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => () => { timers.current.forEach(clearTimeout); }, []);

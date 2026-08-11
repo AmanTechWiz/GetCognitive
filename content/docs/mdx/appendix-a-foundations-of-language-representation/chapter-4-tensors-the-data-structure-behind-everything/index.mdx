@@ -193,6 +193,21 @@ That last operation — `M[idx]` where `idx` is an array of indices — is **exa
 
 ---
 
+## A Note on Naming
+
+The same model dimension appears under four different names depending on whose code you're reading. This trips up everyone who moves between papers and codebases.
+
+| What it means | GPT-2 | HuggingFace | Papers | This book |
+|:---|:---|:---|:---|:---|
+| Embedding / hidden dimension | `n_embd` | `hidden_size` | `d_model` | `d_model` |
+| Number of attention heads | `n_head` | `num_attention_heads` | `h` | `num_heads` |
+| Number of layers | `n_layer` | `num_hidden_layers` | `N` | `num_layers` |
+| Context length | `n_ctx` | `max_position_embeddings` | `n` | `seq_len` |
+
+They all refer to the same quantities — GPT-2's `n_embd=768` is HuggingFace's `hidden_size=768` is the papers' `d_model=768`. When you see an unfamiliar name in a config file or paper, check this table first.
+
+---
+
 ## Quick Recap
 
 - A **tensor** is a container for numbers organized in N dimensions. Scalar (0D), vector (1D), matrix (2D), 3D+.

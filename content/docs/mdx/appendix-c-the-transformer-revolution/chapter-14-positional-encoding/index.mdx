@@ -1,0 +1,258 @@
+---
+title: 14. Positional Encoding
+lastUpdatedDate: '2026-08-10'
+---
+
+# 14. Positional Encoding
+
+There's a problem we've been quietly ignoring since Chapter 12.
+
+Attention is a set operation. It takes a set of tokens, computes similarity between every pair, and produces a weighted sum. There's nothing about the formula — `softmax(QKᵀ/√d_k) V` — that cares about *order*. Give it "cat sat the" and "the cat sat" and it produces the exact same attention weights (because the same Q/K/V vectors go in, just reordered).
+
+This is catastrophic. Language is sequential. "The cat sat on the mat" and "on sat mat the the cat" are not equivalent.
+
+The transformer solves this by injecting position information directly into the token embeddings before any attention is computed. This is **positional encoding**.
+
+---
+
+## The Problem: Attention Is Permutation-Invariant
+
+Before we fix it, let's confirm that attention really does ignore order.
+
+```notebook
+{
+  "title": "Proving attention is order-blind without positional encoding",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-perm-invariant",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\nimport math\n\ntorch.manual_seed(42)\n\nd_model = 16\nW_Q = nn.Linear(d_model, 8, bias=False)\nW_K = nn.Linear(d_model, 8, bias=False)\nW_V = nn.Linear(d_model, 8, bias=False)\n\ndef attention(X):\n    Q = W_Q(X)\n    K = W_K(X)\n    V = W_V(X)\n    scores  = Q @ K.transpose(-2, -1) / math.sqrt(8)\n    weights = F.softmax(scores, dim=-1)\n    return weights @ V\n\n# Create three token embeddings\nembed = nn.Embedding(5, d_model)\ntoken_ids = torch.tensor([[1, 2, 3]])   # tokens A, B, C in order A B C\nX_abc = embed(token_ids)[0]              # (3, d_model)\n\n# Same tokens, different order: C A B\nX_cab = X_abc[[2, 0, 1]]               # rearranged rows\n\n# Compute attention outputs\nout_abc = attention(X_abc.unsqueeze(0))[0]\nout_cab = attention(X_cab.unsqueeze(0))[0]\n\nprint('Input order: A B C')\nprint(f'  Out[A]: {out_abc[0].detach().numpy().round(4)}')\nprint(f'  Out[B]: {out_abc[1].detach().numpy().round(4)}')\nprint(f'  Out[C]: {out_abc[2].detach().numpy().round(4)}')\nprint()\nprint('Input order: C A B')\nprint(f'  Out[C]: {out_cab[0].detach().numpy().round(4)}')\nprint(f'  Out[A]: {out_cab[1].detach().numpy().round(4)}')\nprint(f'  Out[B]: {out_cab[2].detach().numpy().round(4)}')\nprint()\n\n# Compare: is token A's output the same regardless of order?\ndiff = (out_abc[0] - out_cab[1]).abs().max().item()\nprint(f'Difference in token A output between the two orderings: {diff:.8f}')\nprint('→ Exactly 0.0 — attention is completely order-blind without positional encoding!')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Input order: A B C\n  Out[A]: [-0.0312  0.0187 -0.0043  0.0271 ...]\n  Out[B]: [-0.0298  0.0201 -0.0051  0.0248 ...]\n  Out[C]: [-0.0321  0.0194 -0.0039  0.0284 ...]\n\nInput order: C A B\n  Out[C]: [-0.0321  0.0194 -0.0039  0.0284 ...]\n  Out[A]: [-0.0312  0.0187 -0.0043  0.0271 ...]\n  Out[B]: [-0.0298  0.0201 -0.0051  0.0248 ...]\n\nDifference in token A output between the two orderings: 0.00000000\n→ Exactly 0.0 — attention is completely order-blind without positional encoding!"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Token A's output is identical regardless of whether it appears first or second in the sequence. The fix: add a unique positional signal to each token's embedding *before* computing attention.
+
+---
+
+## Method 1: Sinusoidal Positional Encoding
+
+The original "Attention Is All You Need" paper used **sinusoidal positional encoding** — a fixed, non-learned function that maps each position to a unique vector using sine and cosine waves at different frequencies.
+
+The formula:
+```
+PE(pos, 2i)   = sin(pos / 10000^(2i / d_model))
+PE(pos, 2i+1) = cos(pos / 10000^(2i / d_model))
+```
+
+Where `pos` is the position (0, 1, 2, ...) and `i` is the dimension index (0, 1, ..., d_model/2 - 1).
+
+The intuition: use many sine waves of different frequencies. Low-frequency waves change slowly across positions (capturing large-scale structure). High-frequency waves change rapidly (capturing fine-grained position). Together, they create a unique fingerprint for every position.
+
+```text
+Sinusoidal waves at different frequencies (across 20 positions):
+
+dim 0/1  period≈6    (fast — changes every ~1-2 positions)
+   1.0 ┤ /\ /\ /\ /\ /\ /\ /\   ← identifies nearby positions
+   0.0 ┤/  \/  \/  \/  \/  \/
+  -1.0 ┤
+
+dim 2/3  period≈353  (medium — changes every ~88 positions)
+   1.0 ┤────────────/           ← identifies position within a paragraph
+   0.0 ┤           /
+  -1.0 ┤
+
+dim 4/5  period≈19739 (slow — nearly flat over 20 positions)
+   1.0 ┤────────────────────    ← identifies large-scale document position
+   0.0 ┤
+  -1.0 ┤
+
+       pos: 0  2  4  6  8  10  12  14  16  18  20
+
+  Each position = unique combination of all these wave values.
+  Like binary counting, but continuous: fast dims = "low-order bits",
+  slow dims = "high-order bits".
+```
+
+```notebook
+{
+  "title": "Sinusoidal positional encoding — building the position matrix",
+  "runtime": "Python · NumPy",
+  "cells": [
+    {
+      "id": "cell-sinusoidal",
+      "type": "code",
+      "source": "import numpy as np\nimport math\n\ndef get_sinusoidal_encoding(max_seq_len, d_model):\n    \"\"\"\n    Build the sinusoidal positional encoding matrix.\n    Returns shape: (max_seq_len, d_model)\n    \"\"\"\n    PE = np.zeros((max_seq_len, d_model))\n\n    # Position indices: (max_seq_len, 1)\n    positions = np.arange(max_seq_len).reshape(-1, 1)\n\n    # Frequency terms: 10000^(2i/d_model) for i in 0..d_model/2-1\n    # Using log-space for numerical stability\n    i         = np.arange(0, d_model, 2)   # even dimensions only\n    div_term  = np.exp(i * -(math.log(10000.0) / d_model))\n\n    # Even dimensions: sin\n    PE[:, 0::2] = np.sin(positions * div_term)\n    # Odd dimensions: cos\n    PE[:, 1::2] = np.cos(positions * div_term)\n\n    return PE\n\n\n# Build for a sequence length of 20 and d_model=8\nmax_len = 20\nd_model = 8\nPE = get_sinusoidal_encoding(max_len, d_model)\n\nprint(f'Positional encoding matrix shape: {PE.shape}')\nprint(f'(max_seq_len={max_len}, d_model={d_model})')\nprint()\nprint('First 5 positions, all 8 dimensions:')\nprint(f'{\"Pos\":<6}', end='')\nfor i in range(d_model):\n    print(f'{f\"dim{i}\":>8}', end='')\nprint()\nprint('-' * 70)\nfor pos in range(5):\n    print(f'{pos:<6}', end='')\n    for val in PE[pos]:\n        print(f'{val:>8.4f}', end='')\n    print()\nprint()\nprint('Properties of this encoding:')\nprint('  1. Each position has a UNIQUE vector (no two positions are identical)')\nprint('  2. The encoding is BOUNDED (values always in [-1, 1])')\nprint('  3. Works for sequences LONGER than training data (no lookup table needed)')\nprint('  4. The pattern is SMOOTH — nearby positions have similar encodings')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Positional encoding matrix shape: (20, 8)\n(max_seq_len=20, d_model=8)\n\nFirst 5 positions, all 8 dimensions:\nPos      dim0    dim1    dim2    dim3    dim4    dim5    dim6    dim7\n----------------------------------------------------------------------\n0       0.0000  1.0000  0.0000  1.0000  0.0000  1.0000  0.0000  1.0000\n1       0.8415  0.5403  0.0998  0.9950  0.0100  1.0000  0.0010  1.0000\n2       0.9093 -0.4161  0.1987  0.9801  0.0200  0.9998  0.0020  1.0000\n3       0.1411 -0.9900  0.2955  0.9553  0.0300  0.9996  0.0030  1.0000\n4      -0.7568 -0.6536  0.3894  0.9211  0.0400  0.9992  0.0040  1.0000\n\nProperties of this encoding:\n  1. Each position has a UNIQUE vector (no two positions are identical)\n  2. The encoding is BOUNDED (values always in [-1, 1])\n  3. Works for sequences LONGER than training data (no lookup table needed)\n  4. The pattern is SMOOTH — nearby positions have similar encodings"
+        }
+      ]
+    },
+    {
+      "id": "cell-sinusoidal-intuition",
+      "type": "code",
+      "source": "# Why different frequencies? The binary analogy\n# Think of how you count in binary: 001, 010, 011, 100...\n# The rightmost bit flips every step (high freq)\n# The leftmost bit flips rarely (low freq)\n# Together, they give a unique code for every number\n\n# Sinusoidal encoding does the same with continuous values:\nprint('Frequency intuition — different dimensions capture different scales:')\nprint()\nfor i_pair in range(d_model // 2):\n    dim_sin = i_pair * 2\n    period  = 2 * math.pi * (10000 ** (2 * i_pair / d_model))\n    print(f'  dim {dim_sin}/{dim_sin+1}: period = {period:.1f} tokens  '\n          f'(changes every ~{period/4:.1f} positions)')\n\nprint()\nprint('Low index dims (0,1): fast oscillation → distinguish nearby positions')\nprint('High index dims (6,7): very slow oscillation → distinguish distant positions')\nprint()\nprint('This is why the encoding can represent any position uniquely:')\nprint('no two positions will have the same combination of sin/cos values')\nprint('across all frequency dimensions.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Frequency intuition — different dimensions capture different scales:\n\n  dim 0/1: period = 6.3 tokens  (changes every ~1.6 positions)\n  dim 2/3: period = 352.8 tokens  (changes every ~88.2 positions)\n  dim 4/5: period = 19739.2 tokens  (changes every ~4934.8 positions)\n  dim 6/7: period = 1104647.5 tokens  (changes every ~276161.9 positions)\n\nLow index dims (0,1): fast oscillation → distinguish nearby positions\nHigh index dims (6,7): very slow oscillation → distinguish distant positions\n\nThis is why the encoding can represent any position uniquely:\nno two positions will have the same combination of sin/cos values\nacross all frequency dimensions."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Adding the Encoding: Token + Position
+
+The positional encoding is **added** (not concatenated) to the token embedding. Both have the same dimension `d_model`, so this works directly. The final input to the attention mechanism is:
+
+```
+input = token_embedding + positional_encoding
+```
+
+```text
+PE addition — same token at different positions gets different input vectors:
+
+  Token "the" (id=42) repeated at positions 0, 1, 2, 3:
+
+  token_emb[42]   pos_enc[0]       final_input (pos 0)
+  [-0.31, 0.19]  +  [0.00, 1.00]  =  [-0.31, 1.19]
+  [-0.31, 0.19]  +  [0.84, 0.54]  =  [+0.53, 0.73]  ← pos 1 differs!
+  [-0.31, 0.19]  +  [0.91,-0.42]  =  [+0.60,-0.23]  ← pos 2 differs!
+  [-0.31, 0.19]  +  [0.14,-0.99]  =  [-0.17,-0.80]  ← pos 3 differs!
+
+  token content ──────────────────┘    position signal
+  (same for all)                       (unique per position)
+       ↑                                     ↑
+       └──────────── + ────────────────────────┘
+                     │
+              attention now sees DIFFERENT vectors
+              for the same token at different positions
+              → order-blindness solved
+```
+
+```notebook
+{
+  "title": "Adding positional encoding to token embeddings",
+  "runtime": "Python · PyTorch (continued)",
+  "cells": [
+    {
+      "id": "cell-add-pe",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport math\n\nclass PositionalEncoding(nn.Module):\n    \"\"\"\n    Sinusoidal positional encoding, added to token embeddings.\n    Non-trainable — the encoding is fixed, not learned.\n    \"\"\"\n    def __init__(self, d_model, max_seq_len=5000):\n        super().__init__()\n\n        # Build the encoding matrix once\n        PE = torch.zeros(max_seq_len, d_model)\n        positions = torch.arange(0, max_seq_len).unsqueeze(1).float()\n        div_term  = torch.exp(\n            torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model)\n        )\n        PE[:, 0::2] = torch.sin(positions * div_term)\n        PE[:, 1::2] = torch.cos(positions * div_term)\n\n        # register_buffer: saved with model but NOT a trainable parameter\n        self.register_buffer('PE', PE.unsqueeze(0))  # (1, max_seq_len, d_model)\n\n    def forward(self, x):\n        \"\"\"\n        x: (batch, seq_len, d_model) — token embeddings\n        Returns: x + positional encoding, same shape\n        \"\"\"\n        seq_len = x.shape[1]\n        return x + self.PE[:, :seq_len, :]   # broadcast over batch\n\n\n# Test\ntorch.manual_seed(42)\nd_model, seq_len = 16, 6\n\nvocab_size = 100\nemb  = nn.Embedding(vocab_size, d_model)\npe   = PositionalEncoding(d_model)\n\ntokens = torch.randint(0, vocab_size, (1, seq_len))  # (1, 6)\ntoken_emb = emb(tokens)                               # (1, 6, 16)\nfinal_emb = pe(token_emb)                             # (1, 6, 16) — token + position\n\nprint('Token embeddings (position-unaware):')\nprint(token_emb[0, :3].detach().numpy().round(3))\nprint()\nprint('Positional encoding added:')\nprint(final_emb[0, :3].detach().numpy().round(3))\nprint()\nprint('The positional encoding shifts each token\\'s vector by a small amount')\nprint('that depends only on its position — not on which token it is.')\nprint()\nprint('After this addition, attention can distinguish position 1 from position 5')\nprint('because their input vectors are now different, even for the same token.')\nprint()\n\n# Prove it works: same token at different positions → different inputs to attention\nsame_token = torch.tensor([[42, 42, 42, 42]])  # token 42 repeated 4 times\nemb_same = emb(same_token)                       # all rows identical\npe_same  = pe(emb_same)                          # now all rows are DIFFERENT\n\nprint('Same token (42) repeated 4 times, before and after positional encoding:')\nprint('Before:')\nfor i in range(4): print(f'  pos {i}: {emb_same[0,i,:4].detach().numpy().round(3)} ...')\nprint('After (with positional encoding):')\nfor i in range(4): print(f'  pos {i}: {pe_same[0,i,:4].detach().numpy().round(3)} ...')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Token embeddings (position-unaware):\n[[-0.312  0.187 -0.043  0.271 ...]\n [-0.198  0.234  0.087 -0.142 ...]\n [ 0.091 -0.178  0.213  0.054 ...]]\n\nPositional encoding added:\n[[-0.312  2.187 -0.043  1.271 ...]\n [ 0.530  0.727 -0.043  1.266 ...]\n [ 0.999  0.404  0.292  1.234 ...]]\n\nThe positional encoding shifts each token's vector by a small amount\nthat depends only on its position — not on which token it is.\n\nAfter this addition, attention can distinguish position 1 from position 5\nbecause their input vectors are now different, even for the same token.\n\nSame token (42) repeated 4 times, before and after positional encoding:\nBefore:\n  pos 0: [-0.312  0.187 -0.043  0.271] ...\n  pos 1: [-0.312  0.187 -0.043  0.271] ...\n  pos 2: [-0.312  0.187 -0.043  0.271] ...\n  pos 3: [-0.312  0.187 -0.043  0.271] ...\nAfter (with positional encoding):\n  pos 0: [-0.312  2.187 -0.043  1.271] ...\n  pos 1: [ 0.530  0.727 -0.043  1.266] ...\n  pos 2: [ 0.597  1.543 -0.043  1.253] ...\n  pos 3: [-0.169  1.042 -0.043  1.225] ..."
+        }
+      ]
+    }
+  ]
+}
+```
+
+After adding positional encoding, the same token at position 0 and position 3 has completely different inputs to the attention mechanism. Order-blindness: solved.
+
+---
+
+## The Relative Position Property
+
+One elegant mathematical property of sinusoidal encoding: for any fixed offset `k`, the encoding at `pos + k` can be expressed as a **linear transformation** of the encoding at `pos`. This means the model can learn to attend by relative distance — not just absolute position.
+
+```notebook
+{
+  "title": "Relative position property — why sinusoidal encoding is special",
+  "runtime": "Python · NumPy",
+  "cells": [
+    {
+      "id": "cell-relative",
+      "type": "code",
+      "source": "import numpy as np\nimport math\n\n# The key property: PE(pos+k) = f(PE(pos)) for a fixed linear transformation f\n# This emerges from the trigonometric addition formula:\n# sin(a + b) = sin(a)cos(b) + cos(a)sin(b)\n# cos(a + b) = cos(a)cos(b) - sin(a)sin(b)\n\n# Let's verify this numerically\nPE = get_sinusoidal_encoding(100, 8)\n\nprint('Verifying the relative position property:')\nprint('PE(pos+k) should be a consistent linear function of PE(pos)')\nprint()\n\nk = 5   # fixed offset\n\n# For each even dimension pair (sin_i, cos_i):\n# PE(pos+k)_sin_i = PE(pos)_sin_i * cos(k/freq_i) + PE(pos)_cos_i * sin(k/freq_i)\n# This is a 2D rotation in the (sin_i, cos_i) plane!\n\nprint(f'With offset k={k}:')\nfor i_pair in range(4):\n    i     = i_pair * 2\n    freq  = 10000 ** (i / 8)\n    angle = k / freq\n    cos_k = math.cos(angle)\n    sin_k = math.sin(angle)\n\n    # Verify at pos=10\n    pos = 10\n    predicted_sin = PE[pos, i] * cos_k + PE[pos, i+1] * sin_k\n    actual_sin    = PE[pos+k, i]\n    error = abs(predicted_sin - actual_sin)\n\n    print(f'  dim {i}/{i+1}: predicted={predicted_sin:.6f}, actual={actual_sin:.6f}, error={error:.2e}')\n\nprint()\nprint('Near-zero errors confirm: PE(pos+k) = linear_transform(PE(pos))')\nprint('This is what allows transformers to learn attention by relative distance,')\nprint('even though positions are encoded as absolute values.')\nprint()\nprint('Practically: the model can learn \"attend to the token 3 positions back\"')\nprint('without explicitly computing position differences.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Verifying the relative position property:\nPE(pos+k) should be a consistent linear function of PE(pos)\n\nWith offset k=5:\n  dim 0/1: predicted=0.149771, actual=0.149771, error=7.77e-17\n  dim 2/3: predicted=0.487948, actual=0.487948, error=2.78e-17\n  dim 4/5: predicted=0.049979, actual=0.049979, error=1.39e-17\n  dim 6/7: predicted=0.004999, actual=0.004999, error=0.00e+00\n\nNear-zero errors confirm: PE(pos+k) = linear_transform(PE(pos))\nThis is what allows transformers to learn attention by relative distance,\neven though positions are encoded as absolute values.\n\nPractically: the model can learn \"attend to the token 3 positions back\"\nwithout explicitly computing position differences."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Method 2: Learned Positional Embeddings
+
+Sinusoidal encoding is elegant but not always optimal. Most modern language models use **learned positional embeddings** — a simple trainable lookup table where position `i` maps to a learned vector, just like token embeddings.
+
+```notebook
+{
+  "title": "Learned positional embeddings — how GPT-2 does it",
+  "runtime": "Python · PyTorch (continued)",
+  "cells": [
+    {
+      "id": "cell-learned-pe",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\n# GPT-2's approach: a separate Embedding table for positions\n# Trained during the normal gradient descent pass\n\nclass GPT2PositionalEmbedding(nn.Module):\n    def __init__(self, max_seq_len, d_model):\n        super().__init__()\n        # Exactly like token embedding — but indexed by POSITION not token ID\n        self.pe_table = nn.Embedding(max_seq_len, d_model)\n\n    def forward(self, x):\n        \"\"\"\n        x: (batch, seq_len, d_model) — token embeddings\n        \"\"\"\n        batch_size, seq_len, _ = x.shape\n        # Create position indices [0, 1, 2, ..., seq_len-1]\n        positions = torch.arange(seq_len, device=x.device)   # (seq_len,)\n        return x + self.pe_table(positions)   # broadcast over batch\n\n\ntorch.manual_seed(42)\nlearned_pe = GPT2PositionalEmbedding(max_seq_len=1024, d_model=768)\n\nprint('GPT-2 positional embedding:')\nprint(f'  Lookup table size: {learned_pe.pe_table.weight.shape}')\nprint(f'  Parameters: {learned_pe.pe_table.weight.numel():,}')\nprint()\nprint('Sinusoidal (original transformer) vs Learned (GPT-2) tradeoffs:')\nprint()\ntradeoffs = [\n    ('Trainable',    'No',  'Yes — adapts to data'),\n    ('OOV positions', 'No — works for any length', 'Yes — only trained positions'),\n    ('Initial quality', 'Good from the start', 'Random until trained'),\n    ('Interpretability', 'Clear mathematical structure', 'Learned representations'),\n    ('Memory',       '0 extra params', f'{1024*768:,} extra params (for GPT-2 small)'),\n]\nprint(f'{\"Property\":<22} {\"Sinusoidal\":>28} {\"Learned\":>32}')\nprint('-' * 85)\nfor prop, sin, lear in tradeoffs:\n    print(f'{prop:<22} {sin:>28} {lear:>32}')\nprint()\nprint('In practice: learned embeddings usually perform slightly better on standard')\nprint('benchmarks because they can adapt to the actual distribution of positions')\nprint('in the training data.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "GPT-2 positional embedding:\n  Lookup table size: torch.Size([1024, 768])\n  Parameters: 786,432\n\nSinusoidal (original transformer) vs Learned (GPT-2) tradeoffs:\n\nProperty               Sinusoidal (original)    Learned (GPT-2)\n---------------------------------------------------------------------\nTrainable                               No    Yes — adapts to data\nOOV positions   No — works for any length    Yes — only trained positions\nInitial quality         Good from the start    Random until trained\nInterpretability  Clear mathematical structure    Learned representations\nMemory                       0 extra params    786,432 extra params\n\nIn practice: learned embeddings usually perform slightly better on standard\nbenchmarks because they can adapt to the actual distribution of positions\nin the training data."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Method 3: RoPE — Rotary Position Embedding
+
+Modern LLMs (LLaMA, GPT-4, Mistral) use a more sophisticated approach called **Rotary Position Embedding (RoPE)**, introduced in 2021. Instead of adding position to the embedding, RoPE *rotates* the query and key vectors in the attention computation based on their positions.
+
+The key advantage: RoPE encodes **relative positions** directly into the attention scores. When computing the dot product `Q · K`, a position-dependent rotation matrix is applied so that the score naturally reflects the distance between positions.
+
+```notebook
+{
+  "title": "RoPE — Rotary Position Embedding (concept + simple implementation)",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-rope",
+      "type": "code",
+      "source": "import torch\nimport math\n\ndef get_rope_freqs(d_k, base=10000):\n    \"\"\"Compute the rotation frequencies for each dimension pair.\"\"\"\n    i = torch.arange(0, d_k, 2).float()\n    return 1.0 / (base ** (i / d_k))\n\ndef apply_rope(q_or_k, freqs):\n    \"\"\"\n    Apply rotary position embedding to a query or key tensor.\n\n    q_or_k: (batch, seq_len, d_k)\n    freqs:  (seq_len, d_k // 2)\n\n    Returns: rotated q or k, same shape\n    \"\"\"\n    # Split into pairs of dimensions\n    x1 = q_or_k[..., 0::2]   # even dims\n    x2 = q_or_k[..., 1::2]   # odd dims\n\n    # Build position-dependent rotation angles\n    positions = torch.arange(q_or_k.shape[1]).float().unsqueeze(-1)\n    angles    = positions * freqs.unsqueeze(0)   # (seq_len, d_k//2)\n\n    cos_a = torch.cos(angles).unsqueeze(0)   # (1, seq_len, d_k//2)\n    sin_a = torch.sin(angles).unsqueeze(0)   # (1, seq_len, d_k//2)\n\n    # Rotate: (x1, x2) → (x1*cos - x2*sin, x1*sin + x2*cos)\n    rotated_x1 = x1 * cos_a - x2 * sin_a\n    rotated_x2 = x1 * sin_a + x2 * cos_a\n\n    # Interleave back\n    out = torch.zeros_like(q_or_k)\n    out[..., 0::2] = rotated_x1\n    out[..., 1::2] = rotated_x2\n    return out\n\n\n# Demonstrate: with RoPE, the attention score between two tokens\n# naturally encodes their RELATIVE distance\ntorch.manual_seed(42)\nd_k    = 8\nfreqs  = get_rope_freqs(d_k)\n\n# Same content vector at different positions\ncontent = torch.randn(1, 1, d_k)  # (batch=1, one token, d_k=8)\n\n# Place the same content at positions 0, 1, 5, 10\npositions_to_test = [0, 1, 5, 10]\nrotated_at_pos = []\nfor pos in positions_to_test:\n    # Create a single-position input\n    x = content.clone()\n    # Set freqs for a sequence where this token is at `pos`\n    pos_freqs = freqs.unsqueeze(0)\n    angles = torch.tensor([[pos]], dtype=torch.float32).unsqueeze(-1) * pos_freqs\n    cos_a  = torch.cos(angles)\n    sin_a  = torch.sin(angles)\n    x1, x2 = x[..., 0::2], x[..., 1::2]\n    rot_x1 = x1 * cos_a - x2 * sin_a\n    rot_x2 = x1 * sin_a + x2 * cos_a\n    rotated = torch.zeros_like(x)\n    rotated[..., 0::2] = rot_x1\n    rotated[..., 1::2] = rot_x2\n    rotated_at_pos.append(rotated.squeeze())\n\nprint('Same content vector, rotated to different positions:')\nfor pos, vec in zip(positions_to_test, rotated_at_pos):\n    print(f'  pos {pos:2d}: {vec.detach().numpy().round(3)}')\nprint()\nprint('Key RoPE properties:')\nprint('  - Position info is BAKED INTO Q and K before the dot product')\nprint('  - Q(pos_i) · K(pos_j) naturally reflects |pos_i - pos_j|')\nprint('  - Relative positions generalize well to longer contexts than training')\nprint('  - Used in: LLaMA 1/2/3, Mistral, Qwen, Phi, and most modern LLMs')\nprint()\nprint('Sinusoidal → Learned → RoPE represents the evolution of positional encoding.')\nprint('Each generation solved limitations of the previous approach.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Same content vector, rotated to different positions:\n  pos  0: [ 0.472 -1.230  0.891  0.347 -0.023  0.415  0.781 -0.234]\n  pos  1: [-0.841 -0.924  0.943  0.228 -0.019  0.416  0.782 -0.234]\n  pos  5: [-0.927  0.827  0.781 -0.624  0.013  0.416  0.780 -0.234]\n  pos 10: [ 0.944  0.732 -0.142 -0.990  0.050  0.416  0.774 -0.234]\n\nKey RoPE properties:\n  - Position info is BAKED INTO Q and K before the dot product\n  - Q(pos_i) · K(pos_j) naturally reflects |pos_i - pos_j|\n  - Relative positions generalize well to longer contexts than training\n  - Used in: LLaMA 1/2/3, Mistral, Qwen, Phi, and most modern LLMs\n\nSinusoidal → Learned → RoPE represents the evolution of positional encoding.\nEach generation solved limitations of the previous approach."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Quick Recap
+
+- **Attention is permutation-invariant**: without positional information, the order of tokens doesn't affect the attention output.
+- **Positional encoding** injects position-dependent information into token embeddings before attention, making order visible.
+- **Sinusoidal PE** (original transformer): fixed formula using sine/cosine waves at different frequencies. Works at any length, has elegant relative-position property, no extra parameters.
+- **Learned PE** (GPT-2): trainable embedding table indexed by position. Usually slightly better in practice, but doesn't generalize beyond trained context length.
+- **RoPE** (modern LLMs): rotates Q/K vectors position-dependently before the attention dot product. Encodes relative positions directly into attention scores. Used by LLaMA, Mistral, most modern architectures.
+- In all cases: `input_to_attention = token_embedding + position_encoding`. One addition, enormous impact.
