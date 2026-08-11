@@ -42,7 +42,8 @@ test.describe('Navigation', () => {
       .getByRole('link', { name: /start learning/i })
       .first()
       .click();
-    // Static export may redirect /docs to a specific page, so just check we left /
+    // Wait for navigation away from home — static export redirects /docs to a specific page
+    await page.waitForURL((url) => url.pathname !== '/', { timeout: 15000 });
     await expect(page).not.toHaveURL('/');
   });
 });

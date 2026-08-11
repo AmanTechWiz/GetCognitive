@@ -159,6 +159,7 @@ export function DocsSidebarPreview({ docs = [] }: { docs?: any[] }) {
                             {hasChildren && (
                               <button
                                 type="button"
+                                aria-label={isChapterOpen ? 'Collapse chapter' : 'Expand chapter'}
                                 onClick={() => toggleChapter(chapterSlugStr)}
                                 className="inline-flex size-5 shrink-0 items-center justify-center rounded text-fd-muted-foreground hover:bg-fd-accent cursor-pointer"
                               >

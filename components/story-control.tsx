@@ -111,6 +111,7 @@ export function StoryControl({
           />
           {query && (
             <button
+              aria-label="Clear search"
               onClick={() => {
                 setQuery('');
                 setIsOpen(false);
