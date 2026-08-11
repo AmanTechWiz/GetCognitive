@@ -175,6 +175,7 @@ export function SecondSectionBackdrop() {
         <Image
           src={SecondSectionBg}
           alt=""
+          role="presentation"
           fill
           className="object-contain opacity-70 saturate-60 dark:opacity-65"
         />
@@ -443,6 +444,7 @@ export function OrangeDitheredBackground() {
       <Image
         src={Greek2Image}
         alt=""
+        role="presentation"
         fill
         className="absolute inset-0 size-full object-cover object-top opacity-55 saturate-50 dark:opacity-45"
       />
@@ -524,6 +526,7 @@ export function StorySection({ searchItems, docs = [] }: { searchItems: any[]; d
       <Image
         src="/learn-visually-bg.png"
         alt=""
+        role="presentation"
         fill
         className="absolute inset-0 size-full -z-1 pointer-events-none object-cover object-top rounded-2xl"
       />
