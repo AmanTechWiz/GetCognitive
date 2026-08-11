@@ -7,9 +7,8 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
-defaults:
-  run:
-    working-directory: cognitive
+# The repository root IS the Next.js app (cognitive/).
+# No working-directory override needed — all paths are relative to repo root.
 
 jobs:
   # ── 1. Lint ────────────────────────────────────────────────────────────────
@@ -24,7 +23,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cognitive/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -47,7 +46,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cognitive/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -67,7 +66,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cognitive/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -79,7 +78,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: next-out
-          path: cognitive/out
+          path: out
           retention-days: 1
 
   # ── 4. Unit tests ──────────────────────────────────────────────────────────
@@ -94,7 +93,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cognitive/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -106,7 +105,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: cognitive/coverage
+          path: coverage
           retention-days: 7
 
   # ── 5. Component tests ─────────────────────────────────────────────────────
@@ -121,7 +120,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cognitive/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -129,7 +128,7 @@ jobs:
       - name: Run component tests
         run: npm run test:component -- --reporter=verbose
 
-  # ── 6. E2E + Accessibility (requires build) ───────────────────────────────
+  # ── 6. E2E (requires build) ───────────────────────────────────────────────
   e2e:
     name: ✓ e2e
     runs-on: ubuntu-latest
@@ -142,7 +141,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cognitive/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -154,12 +153,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: next-out
-          path: cognitive/out
+          path: out
 
-      - name: Start production server
-        run: npm start &
+      - name: Start static file server
+        run: npx serve out --listen 3000 &
         env:
-          PORT: 3000
+          CI: true
 
       - name: Wait for server
         run: npx wait-on http://localhost:3000 --timeout 60000
@@ -175,7 +174,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: cognitive/playwright-report
+          path: playwright-report
           retention-days: 7
 
   # ── 7. Accessibility ───────────────────────────────────────────────────────
@@ -191,7 +190,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cognitive/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -203,12 +202,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: next-out
-          path: cognitive/out
+          path: out
 
-      - name: Start production server
-        run: npm start &
+      - name: Start static file server
+        run: npx serve out --listen 3000 &
         env:
-          PORT: 3000
+          CI: true
 
       - name: Wait for server
         run: npx wait-on http://localhost:3000 --timeout 60000
@@ -232,7 +231,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cognitive/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -244,12 +243,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: next-out
-          path: cognitive/out
+          path: out
 
-      - name: Start production server
-        run: npm start &
+      - name: Start static file server
+        run: npx serve out --listen 3000 &
         env:
-          PORT: 3000
+          CI: true
 
       - name: Wait for server
         run: npx wait-on http://localhost:3000 --timeout 60000
@@ -265,7 +264,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smoke-report
-          path: cognitive/playwright-report
+          path: playwright-report
           retention-days: 7
 
   # ── Required-checks gate ───────────────────────────────────────────────────
@@ -276,16 +275,27 @@ jobs:
     if: always()
     steps:
       - name: Check all jobs
+        env:
+          LINT: ${{ needs.lint.result }}
+          TYPECHECK: ${{ needs.typecheck.result }}
+          BUILD: ${{ needs.build.result }}
+          UNIT: ${{ needs.unit.result }}
+          COMPONENT: ${{ needs.component.result }}
+          E2E: ${{ needs.e2e.result }}
+          A11Y: ${{ needs.accessibility.result }}
+          SMOKE: ${{ needs.smoke.result }}
         run: |
-          if [[ "${{ needs.lint.result }}" != "success" ||
-                "${{ needs.typecheck.result }}" != "success" ||
-                "${{ needs.build.result }}" != "success" ||
-                "${{ needs.unit.result }}" != "success" ||
-                "${{ needs.component.result }}" != "success" ||
-                "${{ needs.e2e.result }}" != "success" ||
-                "${{ needs.accessibility.result }}" != "success" ||
-                "${{ needs.smoke.result }}" != "success" ]]; then
-            echo "One or more required checks failed."
+          failed=""
+          [ "$LINT"      != "success" ] && failed="$failed lint"
+          [ "$TYPECHECK" != "success" ] && failed="$failed typecheck"
+          [ "$BUILD"     != "success" ] && failed="$failed build"
+          [ "$UNIT"      != "success" ] && failed="$failed unit"
+          [ "$COMPONENT" != "success" ] && failed="$failed component"
+          [ "$E2E"       != "success" ] && failed="$failed e2e"
+          [ "$A11Y"      != "success" ] && failed="$failed accessibility"
+          [ "$SMOKE"     != "success" ] && failed="$failed smoke"
+          if [ -n "$failed" ]; then
+            echo "Failed checks:$failed"
             exit 1
           fi
           echo "All checks passed."
