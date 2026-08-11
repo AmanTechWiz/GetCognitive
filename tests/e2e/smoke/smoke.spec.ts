@@ -63,10 +63,8 @@ test.describe('Production smoke tests', () => {
 
   test('search panel opens and accepts input', async ({ page }) => {
     await page.goto('/');
-    // Look for the search trigger button
-    const searchTrigger = page
-      .getByRole('button', { name: /search/i })
-      .or(page.locator('[class*="search"]').first());
+    // Use .first() to avoid strict-mode violation when locator matches multiple elements
+    const searchTrigger = page.getByRole('button', { name: /search/i }).first();
     if (await searchTrigger.isVisible()) {
       await searchTrigger.click();
     }

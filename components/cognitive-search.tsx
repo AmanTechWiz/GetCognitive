@@ -300,6 +300,7 @@ export function CognitiveSearchTrigger({
     <div ref={rootRef} className={cn('relative', mode === 'modal' && 'contents')}>
       <button
         type="button"
+        aria-label="Search"
         onClick={() => setOpen(true)}
         className={cn(
           'flex h-10 w-full items-center gap-2 rounded-lg border bg-fd-secondary/50 px-3 text-sm text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground',

@@ -96,7 +96,10 @@ export function SiteHeader() {
 
           <div className="ms-auto flex flex-row items-center -me-1.5 lg:hidden">
             <CognitiveSearchTrigger className="size-10 justify-center rounded-md border-0 bg-transparent p-2 [&_kbd]:hidden [&_span]:hidden" />
-            <button className="inline-flex size-10 items-center justify-center rounded-md p-2 text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground">
+            <button
+              aria-label="Open menu"
+              className="inline-flex size-10 items-center justify-center rounded-md p-2 text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-accent-foreground"
+            >
               <ChevronDown className="size-4" />
             </button>
           </div>

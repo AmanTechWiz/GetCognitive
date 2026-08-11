@@ -1931,11 +1931,11 @@ export function BooksScene({
             panelVisible ? 'visible' : 'invisible delay-[500ms]'
           }`}
         >
-          <h1
+          <h2
             className={`m-0 text-[var(--bs-pink)] text-[clamp(52px,5.6vw,92px)] font-extrabold leading-[0.98] tracking-[-0.015em] max-[760px]:text-[clamp(36px,9.5vw,54px)] ${dpChild(50)}`}
           >
             {selectedCfg?.title}
-          </h1>
+          </h2>
           <p
             className={`mt-[26px] max-w-[54ch] text-[var(--bs-lav)] text-[clamp(16px,1.25vw,19px)] leading-[1.65] max-[760px]:mt-4 max-[760px]:line-clamp-4 max-[760px]:text-[15px] ${dpChild(130)}`}
           >
