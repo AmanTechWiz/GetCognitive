@@ -17,8 +17,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:component": "vitest run --project component",
-    "test:unit": "vitest run --project unit",
+    "test:component": "vitest run tests/component",
+    "test:unit": "vitest run tests/unit",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:a11y": "playwright test --project=accessibility"
