@@ -1,19 +1,63 @@
 ---
 title: Appendix E — From GPT to ChatGPT
-description: 'Fine-tuning, alignment with RLHF/DPO, and building conversational AI'
+description: 'Fine-tuning, LoRA, RLHF, DPO, and how a raw language model becomes a useful assistant'
 isChapterOverview: true
-lastUpdatedDate: '2026-08-08'
+lastUpdatedDate: '2026-08-11'
 ---
 
 # Appendix E — From GPT to ChatGPT
 
-The gap between raw GPT-3 and ChatGPT seems huge, but it comes down to training techniques, not architecture.
+Appendix D ended with a GPT that could generate text. It trained on Shakespeare and learned to produce plausible-sounding continuations. Technically impressive. But ask it "how do I reset my password?" and it'll continue the pattern of your question rather than answer it.
 
-This appendix covers how to take a pre-trained language model and transform it into a helpful, conversational assistant:
+That's the gap. A pre-trained language model is extraordinarily capable at one thing: predicting what text tends to follow other text. What it doesn't know is how to be *helpful*. It doesn't know to answer questions, follow instructions, stay on topic, be honest when it's uncertain, or refuse harmful requests. None of those things are implicit in next-token prediction.
 
-1. **Fine-tuning**: Adapt the model to new tasks with small amounts of task-specific data
-2. **Alignment**: Make the model's behavior match human values
-3. **Reinforcement Learning from Human Feedback**: Train on human preferences
-4. **ChatGPT**: How instruction-following conversational systems actually work
+This appendix is about the techniques that close that gap. They're not about architecture — GPT, ChatGPT, Claude, and LLaMA all use the same transformer architecture from Appendix C and D. They're about training: what data you use, what objective you optimize, and how you steer the model's behavior.
 
-By the end, you'll understand that ChatGPT isn't magic—it's a well-engineered application of training techniques on top of the transformer architecture.
+---
+
+## What's in this appendix
+
+**Chapter 16 — Fine-Tuning LLMs**
+
+Pre-training gives you a model that knows a lot. Fine-tuning gives you a model that *does* what you want. This chapter covers supervised fine-tuning (SFT) — the step that turns a raw GPT into a model that follows instructions. The key insight: the training loop is identical to pre-training, but the data changes completely. Also: why you have to mask the prompt in the loss, and why getting this wrong wastes training signal.
+
+**Chapter 17 — LoRA: Parameter-Efficient Fine-Tuning**
+
+Fine-tuning a 7B-parameter model with Adam requires keeping ~120GB of stuff in GPU memory. Most people don't have that. LoRA solves it by adding a tiny low-rank side-path to each weight matrix and training only those extra parameters — often 100× fewer than full fine-tuning, with competitive quality. This chapter covers the math, the implementation from scratch, and why initializing B to zeros is non-negotiable.
+
+**Chapter 18 — Alignment: RLHF and DPO**
+
+Instruction-tuned models still hallucinate, produce harmful content, and give confidently wrong answers. Alignment is the attempt to fix this — to train the model to be helpful, honest, and harmless simultaneously. This chapter covers the full RLHF pipeline (SFT → Reward Model → PPO), the Bradley-Terry preference model, PPO's clipping mechanism, and DPO — the 2023 simplification that eliminates the separate reward model while achieving better results.
+
+**Chapter 19 — How ChatGPT Works**
+
+The last piece: how does a fine-tuned, aligned model become a conversational product? Chat templates, system prompts, multi-turn conversation formatting, how the model "sees" the conversation, and what happens under the hood when you send a message to ChatGPT. This chapter ties together everything from the previous ones into a complete picture.
+
+---
+
+## The conceptual arc
+
+```
+Pre-trained GPT              (Appendix D)
+     |
+     | Fine-tuning on curated conversations
+     |   loss masked to response tokens only
+     v
+SFT Model                    (Chapter 16)
+     |
+     | LoRA: train only low-rank adapters
+     |   100x fewer parameters, competitive quality
+     v
+Fine-tuned cheaply           (Chapter 17)
+     |
+     | RLHF or DPO: learn from human preferences
+     |   what's helpful, honest, harmless
+     v
+Aligned Model                (Chapter 18)
+     |
+     | Chat template + system prompt + conversation format
+     v
+ChatGPT / Claude / LLaMA-chat  (Chapter 19)
+```
+
+Same transformer architecture throughout. The difference is entirely in training.

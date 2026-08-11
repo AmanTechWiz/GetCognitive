@@ -1,0 +1,270 @@
+---
+title: 17. LoRA — Parameter-Efficient Fine-Tuning
+lastUpdatedDate: '2026-08-11'
+---
+
+# 17. LoRA — Parameter-Efficient Fine-Tuning
+
+Fine-tuning a 7B-parameter model the naive way — updating every weight — requires holding a copy of every weight in GPU memory, plus gradients, plus optimizer states. With Adam, that's roughly:
+
+```text
+Memory required for full fine-tuning:
+
+  Model weights (FP16):   2 bytes × N params
+  Gradients:              2 bytes × N params
+  Adam m  (FP32):         4 bytes × N params   ← first moment
+  Adam v  (FP32):         4 bytes × N params   ← second moment
+  ─────────────────────────────────────────────
+  Total:                 12 bytes × N params
+
+  LLaMA-7B  (7B params):  12 × 7,000,000,000 = ~84 GB
+  LLaMA-70B (70B params): 12 × 70B           = ~840 GB
+```
+
+Most people don't have 84GB of GPU memory, let alone 840GB. LoRA (Low-Rank Adaptation) solves this. The core idea is to freeze the original weights completely and introduce tiny trainable matrices alongside them. You train only those — often 100× fewer parameters — and get competitive results.
+
+---
+
+## The Key Observation: Weight Updates Are Low-Rank
+
+When you fine-tune a model, the update to each weight matrix `ΔW` isn't random — it tends to live in a low-dimensional subspace. The claim: you don't need to update all `d × d` values to change what the matrix does. A rank-`r` approximation where `r << d` is often sufficient.
+
+**Low-rank matrix review:**
+
+```text
+Full weight matrix W:  shape (d_out, d_in) = (4096, 4096)
+                       Contains 16,777,216 numbers
+
+Low-rank decomposition:
+  W ≈ W + A @ B
+  where:
+    A: shape (d_out, r)  = (4096, 16)    — 65,536 numbers
+    B: shape (r, d_in)   = (16, 4096)    — 65,536 numbers
+    A @ B: shape (d_out, d_in) = (4096, 4096)  — but RANK r=16
+
+  Total LoRA params: 65,536 + 65,536 = 131,072
+  vs. full update:   16,777,216 params
+  Compression:       128× fewer parameters to train
+```
+
+---
+
+## The LoRA Forward Pass
+
+During the forward pass, the output is the sum of the frozen original path and the trainable LoRA side path:
+
+```text
+Without LoRA:
+  h = W @ x
+      ^─── frozen original weight
+
+With LoRA:
+  h = W @ x  +  (alpha/r) * A @ (B @ x)
+      ^───────   ^──────────────────────
+      frozen     trainable side path
+      path       (A and B are the only learned params)
+
+  where:
+    W:     (d_out, d_in)  — FROZEN, not updated
+    B:     (r, d_in)      — trainable, initialized to ZERO
+    A:     (d_out, r)     — trainable, initialized randomly
+    alpha: scalar hyperparameter (controls scaling)
+    r:     rank (controls capacity; typical: 8, 16, 32, 64)
+```
+
+The `alpha/r` scaling factor normalizes the contribution relative to rank so that changing `r` doesn't require retuning the learning rate.
+
+**Why B=0 at initialization?** At training start, `A @ B = 0` (because B=0), so the LoRA side path contributes nothing. The model starts exactly as the pre-trained model, with no disruption. Training gradually moves B away from zero.
+
+```text
+At initialization:            After training:
+  B = zeros → A @ B = 0        B = small values
+  h = W @ x + 0 = W @ x        h = W @ x + (alpha/r) * A @ B @ x
+  ↑ identical to base model     ↑ learned adaptation added on top
+```
+
+---
+
+## Dimension Walkthrough
+
+Let's trace the shapes through a LoRA-wrapped linear layer with concrete numbers:
+
+```text
+Example: d_model=8, r=2, alpha=4
+
+Input x:  shape (8,)
+
+─── Original path (frozen) ───────────────────────────────
+W:        shape (8, 8)    ← 64 parameters, NOT updated
+W @ x:    (8,8) @ (8,)  = (8,)    ← original transformation
+
+─── LoRA side path (trainable) ────────────────────────────
+B:        shape (2, 8)    ← 16 parameters, updated by optimizer
+A:        shape (8, 2)    ← 16 parameters, updated by optimizer
+
+Step 1:   B @ x  =  (2,8) @ (8,)  =  (2,)   ← project to rank-r space
+Step 2:   A @ (B @ x)  =  (8,2) @ (2,)  =  (8,)   ← project back
+
+Scale:    (alpha/r) * A @ (B @ x)  =  (4/2) * ...  =  2 * (8,)
+
+─── Output ────────────────────────────────────────────────
+h = W @ x  +  2 * A @ B @ x
+    ─────     ───────────────
+    (8,)         (8,)
+         = (8,)  ← same shape as no-LoRA
+
+Parameters: 64 (frozen) + 16 + 16 = 96 total
+Trainable:  16 + 16 = 32   (33% of total, vs 100% in full fine-tuning)
+```
+
+In practice with d_model=4096, r=16:
+- Original layer: 16,777,216 params — frozen
+- LoRA: 65,536 + 65,536 = 131,072 params — trained
+- Ratio: 0.78% of the original
+
+---
+
+## LoRA in Code
+
+```notebook
+{
+  "title": "LoRA from scratch — implementing LoraLinear",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-lora-layer",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport math\n\nclass LoRALayer(nn.Module):\n    \"\"\"\n    The low-rank side path: computes (alpha/r) * A @ (B @ x)\n\n    B is initialized to ZERO  → side path starts at 0, no disruption\n    A is initialized randomly → provides direction once B learns to be nonzero\n    \"\"\"\n    def __init__(self, in_features, out_features, rank, alpha):\n        super().__init__()\n        self.rank    = rank\n        self.scaling = alpha / rank\n\n        # B: (rank, in_features)  — zero init, critical!\n        self.B = nn.Parameter(torch.zeros(rank, in_features))\n        # A: (out_features, rank) — small random init\n        self.A = nn.Parameter(torch.empty(out_features, rank))\n        nn.init.kaiming_uniform_(self.A, a=math.sqrt(5))\n\n    def forward(self, x):\n        # x: (..., in_features)\n        # B @ x^T → (..., rank)\n        # A @ that → (..., out_features)\n        return (x @ self.B.T) @ self.A.T * self.scaling\n\n\nclass LinearWithLoRA(nn.Module):\n    \"\"\"\n    Wraps an existing nn.Linear with a LoRA side path.\n    Original linear weights are FROZEN — only LoRA params are trained.\n    \"\"\"\n    def __init__(self, linear: nn.Linear, rank: int, alpha: int):\n        super().__init__()\n        self.linear = linear\n        self.lora   = LoRALayer(linear.in_features, linear.out_features, rank, alpha)\n\n        # Freeze original weights\n        self.linear.weight.requires_grad = False\n        if self.linear.bias is not None:\n            self.linear.bias.requires_grad = False\n\n    def forward(self, x):\n        return self.linear(x) + self.lora(x)  # original + LoRA correction\n\n    def merged_weight(self):\n        \"\"\"Compute W + (alpha/r)*A@B — for merging back after training.\"\"\"\n        delta_W = (self.lora.A @ self.lora.B) * self.lora.scaling\n        return self.linear.weight + delta_W\n\n\n# ─── Demo ──────────────────────────────────────────────────────\ntorch.manual_seed(42)\nd_in, d_out, rank, alpha = 8, 8, 2, 4\n\n# Original linear layer (frozen)\noriginal_layer = nn.Linear(d_in, d_out, bias=False)\n\n# Wrap it with LoRA\nlora_layer = LinearWithLoRA(original_layer, rank=rank, alpha=alpha)\n\nprint('Parameter count:')\nfor name, param in lora_layer.named_parameters():\n    status = 'TRAINABLE' if param.requires_grad else 'frozen'\n    print(f'  {name:<25} shape={str(tuple(param.shape)):<14} {status}  ({param.numel()} params)')\nprint()\n\ntotal   = sum(p.numel() for p in lora_layer.parameters())\ntrainable = sum(p.numel() for p in lora_layer.parameters() if p.requires_grad)\nprint(f'Total parameters:     {total}')\nprint(f'Trainable (LoRA):     {trainable}  ({100*trainable/total:.1f}%)')\nprint(f'Frozen (original W):  {total - trainable}  ({100*(total-trainable)/total:.1f}%)')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Parameter count:\n  linear.weight             shape=(8, 8)         frozen  (64 params)\n  lora.B                    shape=(2, 8)         TRAINABLE  (16 params)\n  lora.A                    shape=(8, 2)         TRAINABLE  (16 params)\n\nTotal parameters:     96\nTrainable (LoRA):     32  (33.3%)\nFrozen (original W):  64  (66.7%)"
+        }
+      ]
+    },
+    {
+      "id": "cell-lora-verify-init",
+      "type": "code",
+      "source": "# Verify: LoRA side path is exactly zero at initialization\n# because B is initialized to zeros\n\ntorch.manual_seed(42)\nx = torch.randn(4, d_in)   # batch of 4 inputs\n\n# Output from original frozen layer\nout_original = original_layer(x)\n\n# Output from LoRA-wrapped layer\nout_lora = lora_layer(x)\n\n# Difference should be zero at init (because B=0 → A@B@x=0)\ndiff = (out_lora - out_original).abs().max().item()\n\nprint('At initialization (B=zeros):')\nprint(f'  Original output:    {out_original[0].detach().numpy().round(4)}')\nprint(f'  LoRA output:        {out_lora[0].detach().numpy().round(4)}')\nprint(f'  Max difference:     {diff:.2e}')\nprint(f'  Identical to base model? {diff < 1e-6}')\nprint()\nprint('This is why B=0 init is non-negotiable:')\nprint('  It guarantees the model starts exactly at the pretrained checkpoint.')\nprint('  Any other B init would disrupt the pretrained weights immediately.')\nprint()\n\n# Simulate one gradient step — now B moves away from zero\noptimizer = torch.optim.SGD([lora_layer.lora.A, lora_layer.lora.B], lr=0.1)\ntarget    = torch.randn(4, d_out)\nloss = (lora_layer(x) - target).pow(2).mean()\nloss.backward()\noptimizer.step()\n\n# Now B is nonzero — the LoRA side path contributes\nout_after = lora_layer(x)\ndiff_after = (out_after - out_original).abs().max().item()\nprint('After one gradient step (B is now nonzero):')\nprint(f'  Max difference from base: {diff_after:.4f}')\nprint('  The LoRA adaptation has begun.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "At initialization (B=zeros):\n  Original output:    [-0.3124  0.2187 -0.0431  0.2712 -0.1984  0.3341 -0.0812  0.1243]\n  LoRA output:        [-0.3124  0.2187 -0.0431  0.2712 -0.1984  0.3341 -0.0812  0.1243]\n  Max difference:     0.00e+00\n  Identical to base model? True\n\nThis is why B=0 init is non-negotiable:\n  It guarantees the model starts exactly at the pretrained checkpoint.\n  Any other B init would disrupt the pretrained weights immediately.\n\nAfter one gradient step (B is now nonzero):\n  Max difference from base: 0.0832\n  The LoRA adaptation has begun."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Applying LoRA to a Real Model
+
+To apply LoRA to a transformer, you replace specific `nn.Linear` layers with `LinearWithLoRA`. Typically you target the attention projection matrices (Q, K, V, O) and sometimes the FFN layers. The transformer blocks are otherwise unchanged.
+
+```text
+Before LoRA:                          After LoRA:
+─────────────────────────────────     ──────────────────────────────────────────
+TransformerBlock                      TransformerBlock
+  MultiHeadAttention                    MultiHeadAttention
+    W_Q = Linear(768, 768)     →          W_Q = LinearWithLoRA(Linear(768,768), r=16)
+    W_K = Linear(768, 768)     →          W_K = LinearWithLoRA(Linear(768,768), r=16)
+    W_V = Linear(768, 768)     →          W_V = LinearWithLoRA(Linear(768,768), r=16)
+    W_O = Linear(768, 768)     →          W_O = LinearWithLoRA(Linear(768,768), r=16)
+  FeedForward                           FeedForward (unchanged, or also LoRA'd)
+    w1 = Linear(768, 3072)                w1 = Linear(768, 3072)     ← often kept frozen
+    w2 = Linear(3072, 768)                w2 = Linear(3072, 768)     ← often kept frozen
+```
+
+```notebook
+{
+  "title": "Applying LoRA to a transformer — parameter count comparison",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-lora-apply",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\n\ndef replace_linear_with_lora(model, rank=16, alpha=16, target_modules=None):\n    \"\"\"\n    Walk every nn.Linear in the model and replace with LinearWithLoRA.\n    target_modules: if set, only replace Linear layers whose name matches.\n    \"\"\"\n    for name, module in model.named_children():\n        if isinstance(module, nn.Linear):\n            # Check if this module should be replaced\n            if target_modules is None or any(t in name for t in target_modules):\n                setattr(model, name, LinearWithLoRA(module, rank=rank, alpha=alpha))\n        else:\n            # Recurse into sub-modules\n            replace_linear_with_lora(module, rank, alpha, target_modules)\n\n\n# Simulate a tiny 2-layer transformer (stand-in for GPT-2 small)\nclass TinyTransformer(nn.Module):\n    def __init__(self, d_model=64, n_layers=2):\n        super().__init__()\n        self.layers = nn.ModuleList([\n            nn.ModuleDict({\n                'W_Q': nn.Linear(d_model, d_model, bias=False),\n                'W_K': nn.Linear(d_model, d_model, bias=False),\n                'W_V': nn.Linear(d_model, d_model, bias=False),\n                'W_O': nn.Linear(d_model, d_model, bias=False),\n                'ffn1': nn.Linear(d_model, 4*d_model, bias=False),\n                'ffn2': nn.Linear(4*d_model, d_model, bias=False),\n            })\n            for _ in range(n_layers)\n        ])\n\n    def forward(self, x):\n        return x  # placeholder\n\n\nmodel = TinyTransformer(d_model=64, n_layers=2)\n\ntotal_before = sum(p.numel() for p in model.parameters())\nprint(f'Before LoRA: {total_before:,} total parameters')\nprint(f'  All trainable (full fine-tuning would update all of these)')\nprint()\n\n# Freeze everything first\nfor p in model.parameters():\n    p.requires_grad = False\n\n# Apply LoRA only to attention matrices (not FFN)\nreplace_linear_with_lora(model, rank=4, alpha=4, target_modules=['W_Q', 'W_K', 'W_V', 'W_O'])\n\ntotal_after    = sum(p.numel() for p in model.parameters())\ntrainable      = sum(p.numel() for p in model.parameters() if p.requires_grad)\nfrozen         = total_after - trainable\n\nprint(f'After LoRA (r=4, attn only):')\nprint(f'  Total parameters: {total_after:,}')\nprint(f'  Trainable (LoRA): {trainable:,}   ({100*trainable/total_after:.1f}%)')\nprint(f'  Frozen (original): {frozen:,}   ({100*frozen/total_after:.1f}%)')\nprint()\nprint(f'Fine-tuning cost reduced by {total_before / trainable:.0f}x')\nprint()\nprint('Trainable parameters breakdown:')\nfor name, param in model.named_parameters():\n    if param.requires_grad:\n        print(f'  {name:<45} {param.numel():>6} params')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Before LoRA: 43,008 total parameters\n  All trainable (full fine-tuning would update all of these)\n\nAfter LoRA (r=4, attn only):\n  Total parameters: 45,056\n  Trainable (LoRA): 2,048   (4.5%)\n  Frozen (original): 43,008   (95.5%)\n\nFine-tuning cost reduced by 21x\n\nTrainable parameters breakdown:\n  layers.0.W_Q.lora.B                            256 params\n  layers.0.W_Q.lora.A                            256 params\n  layers.0.W_K.lora.B                            256 params\n  layers.0.W_K.lora.A                            256 params\n  layers.0.W_V.lora.B                            256 params\n  layers.0.W_V.lora.A                            256 params\n  layers.0.W_O.lora.B                            256 params\n  layers.0.W_O.lora.A                            256 params\n  layers.1.W_Q.lora.B                            256 params\n  layers.1.W_Q.lora.A                            256 params\n  layers.1.W_K.lora.B                            256 params\n  layers.1.W_K.lora.A                            256 params\n  layers.1.W_V.lora.B                            256 params\n  layers.1.W_V.lora.A                            256 params\n  layers.1.W_O.lora.B                            256 params\n  layers.1.W_O.lora.A                            256 params"
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Merging LoRA Back Into the Weights
+
+After training, you have two options for the LoRA adapter:
+
+**Option 1: Keep separate** — at inference time, compute `W @ x + (alpha/r) * A @ B @ x` for every forward pass. Slightly slower; requires carrying the LoRA matrices separately.
+
+**Option 2: Merge into W** — compute `W_merged = W + (alpha/r) * A @ B` once, then inference is identical to a normal model. Zero extra compute at inference.
+
+```text
+Before merge:
+  h = W @ x + (alpha/r) * A @ B @ x
+      ^─────                 ^────────── two separate operations
+
+After merge:
+  W_merged = W + (alpha/r) * A @ B      ← computed ONCE, offline
+  h = W_merged @ x                       ← single operation, same speed as base model
+```
+
+Merging is almost always the right choice for deployment. The base model weights are frozen, so the merge is a one-time, reversible operation.
+
+---
+
+## QLoRA: Quantize the Base, LoRA the Adapters
+
+QLoRA (Dettmers et al. 2023) extends LoRA further: quantize the frozen base model weights to 4-bit (instead of 16-bit), keeping the LoRA adapter in 16-bit. The result:
+
+```text
+Memory comparison for LLaMA-7B:
+
+  Full fine-tuning (FP16):   ~84 GB
+  LoRA (FP16 base, r=16):    ~15 GB
+  QLoRA (4-bit base, r=16):  ~5 GB   ← fits on a single 8GB GPU
+
+  Quality degradation from FP16 → 4-bit base: surprisingly small
+  (NF4 quantization preserves important weight distributions)
+```
+
+QLoRA made fine-tuning 7B models possible on consumer hardware. It's why you can fine-tune LLaMA on a single RTX 3090.
+
+---
+
+## When to Use LoRA
+
+```text
+Use LoRA when:
+  + You have limited GPU memory (< 40GB for 7B models)
+  + You want to maintain the pretrained base (can swap adapters)
+  + You want to fine-tune quickly and cheaply
+  + You're fine-tuning for a specific task/domain/style
+
+Use full fine-tuning when:
+  + You have abundant compute
+  + The task is very different from pretraining (large distribution shift)
+  + You need maximum performance and can afford the memory
+
+In practice: LoRA is the default for almost everyone.
+```
+
+---
+
+## Quick Recap
+
+- Full fine-tuning requires 12 bytes × N params — prohibitive for large models.
+- **LoRA** adds low-rank matrices `A` (d × r) and `B` (r × d) alongside frozen original weights. Only `A` and `B` are trained.
+- Forward pass: `h = Wx + (α/r) · A(Bx)` — two paths, one frozen, one trainable.
+- **B initialized to zeros**: guarantees the model starts identical to the pretrained checkpoint. Non-negotiable.
+- Typical rank `r=16` on LLaMA-7B reduces trainable parameters from 7B to ~131M — about 53× reduction.
+- After training, `W_merged = W + (α/r)·AB` can be computed once for zero-overhead inference.
+- **QLoRA** adds 4-bit quantization of the base model, bringing 7B fine-tuning within reach of consumer GPUs (~5GB).

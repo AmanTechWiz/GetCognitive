@@ -1,0 +1,393 @@
+---
+title: 18. Alignment — RLHF and DPO
+lastUpdatedDate: '2026-08-11'
+---
+
+# 18. Alignment — RLHF and DPO
+
+After SFT, the model follows instructions. That's genuinely useful. But SFT has a problem it can't solve on its own: it teaches the model to *imitate* the training data, and training data is never perfectly curated. The model can imitate a mediocre response just as easily as a great one, because the loss function doesn't distinguish — it just measures "how well did the model predict this specific sequence of tokens?"
+
+What you actually want is for the model to *prefer* better responses over worse ones. That requires a fundamentally different training signal: human judgments about which response is better.
+
+This is what **alignment training** does.
+
+---
+
+## The Problem: Pre-training and SFT Miss Human Preferences
+
+Here's what a raw SFT model can still do wrong:
+
+```text
+Prompt: "Should I take ibuprofen with alcohol?"
+
+SFT model (imitating training data):
+  "Some people take ibuprofen after drinking. The combination can
+   cause stomach issues in some individuals."
+
+Desired response:
+  "No — combining ibuprofen with alcohol significantly increases
+   the risk of stomach bleeding and liver damage. Avoid this."
+
+The SFT model isn't lying. It's completing a plausible pattern.
+But the second response is safer and more helpful.
+No amount of next-token prediction loss tells the model this.
+```
+
+To fix this, you need training examples that say: "this response is better than that one." You need **preference data**.
+
+---
+
+## The RLHF Pipeline
+
+**Reinforcement Learning from Human Feedback (RLHF)** is the training pipeline used by OpenAI (ChatGPT), Anthropic (Claude), and others. It has three stages:
+
+```text
+Stage 1: Supervised Fine-Tuning (SFT)
+   ↓
+   Take the base model, fine-tune on curated instruction-response pairs
+   (Chapter 16). Output: SFT Model.
+
+Stage 2: Train a Reward Model (RM)
+   ↓
+   Collect human preference data: (prompt, chosen response, rejected response)
+   Train a separate model that predicts which response humans prefer.
+   Output: Reward Model — a function that scores any (prompt, response) pair.
+
+Stage 3: PPO — Fine-tune with Reinforcement Learning
+   ↓
+   Use the Reward Model as the "environment".
+   Update the SFT model to generate responses that get higher reward scores.
+   Output: Aligned Model.
+```
+
+---
+
+## Stage 2: The Reward Model
+
+The reward model takes a prompt and a response and outputs a single scalar score — higher means better.
+
+```text
+Input:
+  Prompt:   "What's the capital of France?"
+  Response: "Paris is the capital of France."
+
+Output:   r = 8.4  (high score — good response)
+
+─────────────────────────────────────────
+
+Input:
+  Prompt:   "What's the capital of France?"
+  Response: "It depends on the context."
+
+Output:   r = 1.2  (low score — evasive, unhelpful)
+```
+
+**Architecture:** Same transformer as the language model, but the LM head is replaced with a single linear layer that outputs one number instead of a vocabulary distribution.
+
+**Training data:** Pairs of `(prompt, chosen, rejected)` collected from human labelers:
+
+```text
+Example preference pair:
+  Prompt:   "Explain black holes in simple terms"
+  Chosen:   "Black holes are regions where gravity is so strong
+              that nothing, not even light, can escape. They form
+              when massive stars collapse at the end of their lives."
+  Rejected: "Black holes are quite complex astrophysical phenomena
+              related to Einstein's general relativity equations..."
+```
+
+The reward model learns to assign a higher score to `chosen` than `rejected`.
+
+### The Bradley-Terry Loss
+
+The reward model is trained with the **Bradley-Terry** loss — a pairwise preference loss borrowed from sports ranking:
+
+```text
+Given:
+  r_chosen   = reward model score for the chosen response
+  r_rejected = reward model score for the rejected response
+
+We want: r_chosen > r_rejected
+
+Loss = -log( sigmoid(r_chosen - r_rejected) )
+     = -log( sigma(r_chosen - r_rejected) )
+
+Where sigmoid(x) = 1 / (1 + e^(-x))
+
+Intuition:
+  If r_chosen >> r_rejected → diff is large positive
+    → sigmoid(large) ≈ 1
+    → -log(1) ≈ 0   (low loss, good)
+
+  If r_chosen ≈ r_rejected → diff ≈ 0
+    → sigmoid(0) = 0.5
+    → -log(0.5) ≈ 0.69  (medium loss)
+
+  If r_chosen << r_rejected → diff is large negative
+    → sigmoid(-large) ≈ 0
+    → -log(0) → ∞   (huge loss, bad)
+```
+
+```text
+Loss surface (Bradley-Terry):
+
+  loss
+   ^
+   |  .
+   | ..
+   |   ..
+   |     ...
+   |        ........
+   +──────────────────> r_chosen - r_rejected
+   -8  -4   0   4   8
+
+  Large negative diff = wrong ordering = high loss
+  Large positive diff = correct ordering = low loss
+  The model is trained to push chosen scores up and rejected scores down.
+```
+
+```notebook
+{
+  "title": "Reward model loss — Bradley-Terry with worked examples",
+  "runtime": "Python · NumPy",
+  "cells": [
+    {
+      "id": "cell-reward-loss",
+      "type": "code",
+      "source": "import numpy as np\n\ndef sigmoid(x):\n    return 1 / (1 + np.exp(-x))\n\ndef reward_loss(r_chosen, r_rejected):\n    \"\"\"Bradley-Terry loss: -log(sigmoid(r_chosen - r_rejected))\"\"\"\n    diff = r_chosen - r_rejected\n    prob = sigmoid(diff)    # probability the model thinks chosen is better\n    loss = -np.log(np.clip(prob, 1e-10, 1.0))\n    return diff, prob, loss\n\nscenarios = [\n    ('Model is right (strongly)',    8.0, 2.0),\n    ('Model is right (weakly)',      6.0, 5.0),\n    ('Model is confused',            5.0, 5.0),\n    ('Model is wrong (weakly)',      4.0, 5.0),\n    ('Model is wrong (strongly)',    1.0, 9.0),\n]\n\nprint(f'{\"Scenario\":<30}  {\"r_cho\":>6}  {\"r_rej\":>6}  {\"diff\":>6}  {\"P(right)\":>8}  {\"loss\":>7}')\nprint('-' * 75)\nfor name, r_c, r_r in scenarios:\n    diff, prob, loss = reward_loss(r_c, r_r)\n    correct = 'GOOD' if diff > 0 else ('WRONG' if diff < 0 else 'TIE ')\n    print(f'{name:<30}  {r_c:>6.1f}  {r_r:>6.1f}  {diff:>+6.1f}  {prob:>8.4f}  {loss:>7.4f}  [{correct}]')\nprint()\nprint('Training pushes the model to:')\nprint('  - Increase r_chosen (assign higher scores to good responses)')\nprint('  - Decrease r_rejected (assign lower scores to bad responses)')\nprint('  - Maximize the margin r_chosen - r_rejected')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Scenario                        r_cho   r_rej    diff  P(right)     loss\n---------------------------------------------------------------------------\nModel is right (strongly)        8.0     2.0    +6.0    0.9975   0.0025  [GOOD]\nModel is right (weakly)          6.0     5.0    +1.0    0.7311   0.3133  [GOOD]\nModel is confused                5.0     5.0    +0.0    0.5000   0.6931  [TIE ]\nModel is wrong (weakly)          4.0     5.0    -1.0    0.2689   1.3133  [WRONG]\nModel is wrong (strongly)        1.0     9.0    -8.0    0.0003   8.0003  [WRONG]\n\nTraining pushes the model to:\n  - Increase r_chosen (assign higher scores to good responses)\n  - Decrease r_rejected (assign lower scores to bad responses)\n  - Maximize the margin r_chosen - r_rejected"
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Stage 3: PPO — Training With the Reward Signal
+
+Once the reward model is trained, it becomes the environment for RL training. The language model is the **policy** — it generates tokens, and the reward model judges the complete response.
+
+### The PPO Objective
+
+**PPO (Proximal Policy Optimization)** is the RL algorithm used in RLHF. Its key innovation: it prevents the policy from updating too aggressively in one step, which would cause training instability.
+
+```text
+Two core components of PPO:
+
+1. Policy ratio:
+   ratio = π_new(token | prompt) / π_old(token | prompt)
+           ^────────────────────   ^──────────────────────
+           new policy probability  old policy probability
+
+   ratio > 1: new policy assigns MORE probability to this token than old
+   ratio < 1: new policy assigns LESS probability
+
+2. Clipping:
+   ratio_clipped = clip(ratio, 1-ε, 1+ε)  where ε ≈ 0.2
+
+   This limits how much the policy can change in one step:
+     ratio > 1.2 gets clipped to 1.2
+     ratio < 0.8 gets clipped to 0.8
+
+PPO Loss = -E[ min(ratio × A, clip(ratio, 1-ε, 1+ε) × A) ]
+                  ^──────────  ^──────────────────────────
+                  unclipped     clipped version
+
+Take the MINIMUM of both → conservative update → stable training
+A = advantage = reward_score - baseline  (how much better than average)
+```
+
+```text
+PPO clipping visualization (ε=0.2, advantage=+1.0):
+
+  objective
+  (what we maximize)
+   ^
+1.2|              *──────────────  ← clipped at 1+ε=1.2
+   |           *
+   |        *
+1.0|     *
+   |  *
+0.8|*
+   |
+   +──────────────────────> policy ratio
+   0.5   1.0   1.5   2.0
+
+If ratio > 1.2: objective is capped at 1.2 (no benefit from larger updates)
+This stops the model from making huge jumps that might destabilize training.
+```
+
+### The KL Penalty
+
+There's a second term in the full PPO loss: a **KL divergence penalty** between the current policy and the original SFT model:
+
+```text
+Full PPO objective:
+  L = E[min(ratio × A, clip(ratio, 1-ε, 1+ε) × A)]  ← PPO term
+    - β × KL(π_current || π_SFT)                      ← KL penalty
+
+  where β is a small coefficient (0.01 to 0.1)
+
+The KL penalty prevents "reward hacking":
+  Without KL: the model might find adversarial inputs to the reward model
+  — outputs that score very high but are actually terrible text
+  (e.g., repeating a single token endlessly if the RM rewards length)
+
+  With KL: staying close to the SFT model is rewarded
+  — extreme deviations get penalized
+```
+
+```notebook
+{
+  "title": "PPO clipping — worked examples showing why it prevents instability",
+  "runtime": "Python · NumPy",
+  "cells": [
+    {
+      "id": "cell-ppo-clip",
+      "type": "code",
+      "source": "import numpy as np\n\ndef ppo_objective(ratio, advantage, epsilon=0.2):\n    \"\"\"PPO surrogate objective for a single token.\"\"\"\n    unclipped = ratio * advantage\n    clipped   = np.clip(ratio, 1 - epsilon, 1 + epsilon) * advantage\n    # Take minimum (conservative — prevents over-optimization)\n    return min(unclipped, clipped), unclipped, clipped\n\nprint('PPO Clipping Demo (epsilon=0.2)')\nprint('='*65)\nprint()\nprint('Case 1: Advantage = +1.0  (good response — want to reinforce)')\nprint(f'{\"Ratio\":>8}  {\"Unclipped\":>12}  {\"Clipped\":>10}  {\"Taken\":>10}  {\"Note\"}')\nprint('-'*65)\nfor ratio in [0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 2.0]:\n    obj, unc, cli = ppo_objective(ratio, advantage=1.0)\n    taken = 'clipped' if obj == cli and ratio != np.clip(ratio, 0.8, 1.2) else 'unclipped'\n    clip_note = ' ← clip kicks in' if abs(ratio - 1.0) > 0.2 else ''\n    print(f'{ratio:>8.2f}  {unc:>12.4f}  {cli:>10.4f}  {obj:>10.4f}  {taken}{clip_note}')\nprint()\nprint('Case 2: Advantage = -1.0  (bad response — want to suppress)')\nprint(f'{\"Ratio\":>8}  {\"Unclipped\":>12}  {\"Clipped\":>10}  {\"Taken\":>10}  {\"Note\"}')\nprint('-'*65)\nfor ratio in [0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5]:\n    obj, unc, cli = ppo_objective(ratio, advantage=-1.0)\n    clip_note = ' ← clip kicks in' if abs(ratio - 1.0) > 0.2 else ''\n    print(f'{ratio:>8.2f}  {unc:>12.4f}  {cli:>10.4f}  {obj:>10.4f}{clip_note}')\nprint()\nprint('Key insight: clipping prevents both:')\nprint('  - Over-reinforcing good responses (ratio stuck at 1.2 for advantage>0)')\nprint('  - Over-suppressing bad responses (ratio stuck at 0.8 for advantage<0)')\nprint('  Both prevent the policy from changing too fast in one step.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "PPO Clipping Demo (epsilon=0.2)\n=================================================================\n\nCase 1: Advantage = +1.0  (good response — want to reinforce)\n   Ratio     Unclipped    Clipped      Taken      Note\n-----------------------------------------------------------------\n    0.70        0.7000      0.8000      0.7000  unclipped\n    0.90        0.9000      0.9000      0.9000  unclipped\n    1.00        1.0000      1.0000      1.0000  unclipped\n    1.10        1.1000      1.1000      1.1000  unclipped\n    1.20        1.2000      1.2000      1.2000  unclipped\n    1.30        1.3000      1.2000      1.2000  clipped ← clip kicks in\n    1.50        1.5000      1.2000      1.2000  clipped ← clip kicks in\n    2.00        2.0000      1.2000      1.2000  clipped ← clip kicks in\n\nCase 2: Advantage = -1.0  (bad response — want to suppress)\n   Ratio     Unclipped    Clipped      Taken      Note\n-----------------------------------------------------------------\n    0.70       -0.7000     -0.8000     -0.7000\n    0.90       -0.9000     -0.9000     -0.9000\n    1.00       -1.0000     -1.0000     -1.0000\n    1.10       -1.1000     -1.1000     -1.1000\n    1.20       -1.2000     -1.2000     -1.2000\n    1.30       -1.3000     -1.2000     -1.2000 ← clip kicks in\n    1.50       -1.5000     -1.2000     -1.2000 ← clip kicks in\n\nKey insight: clipping prevents both:\n  - Over-reinforcing good responses (ratio stuck at 1.2 for advantage>0)\n  - Over-suppressing bad responses (ratio stuck at 0.8 for advantage<0)\n  Both prevent the policy from changing too fast in one step."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## DPO: Throwing Away the Reward Model
+
+RLHF works, but it's expensive and fiddly:
+- You need to train *and maintain* a separate reward model
+- PPO training is unstable and hard to tune
+- The reward model can be gamed (reward hacking)
+
+**Direct Preference Optimization (DPO, Rafailov et al. 2023)** eliminates all of this. The key insight: through a mathematical transformation, the RLHF objective can be expressed directly in terms of the language model probabilities — no separate reward model needed.
+
+### The DPO Loss
+
+```text
+DPO objective:
+
+  L_DPO = -log( sigma(
+    beta * log( pi_theta(chosen) / pi_ref(chosen) )
+    -
+    beta * log( pi_theta(rejected) / pi_ref(rejected) )
+  ))
+
+Where:
+  pi_theta = the model being trained (current policy)
+  pi_ref   = the reference SFT model (frozen, not updated)
+  beta     = temperature parameter (controls aggressiveness, typically 0.1–0.5)
+  sigma    = sigmoid function
+
+Simplified view:
+  chosen_improvement   = log pi_theta(chosen)   - log pi_ref(chosen)
+  rejected_improvement = log pi_theta(rejected)  - log pi_ref(rejected)
+
+  L_DPO = -log sigma( beta * (chosen_improvement - rejected_improvement) )
+```
+
+The intuition:
+
+```text
+DPO wants:
+  chosen_improvement   > 0   → pi_theta assigns MORE prob to chosen than pi_ref does
+  rejected_improvement < 0   → pi_theta assigns LESS prob to rejected than pi_ref does
+
+  The loss is low when chosen gets relatively more probable AND rejected gets
+  relatively less probable — both measured against the reference model.
+
+  pi_ref acts as a regularizer: the model shouldn't change too drastically
+  from the SFT checkpoint (prevents reward hacking via implicit KL).
+```
+
+```notebook
+{
+  "title": "DPO loss — worked examples comparing three scenarios",
+  "runtime": "Python · NumPy",
+  "cells": [
+    {
+      "id": "cell-dpo",
+      "type": "code",
+      "source": "import numpy as np\n\ndef dpo_loss(logp_chosen, logp_rejected, logp_ref_chosen, logp_ref_rejected, beta=0.5):\n    \"\"\"\n    DPO loss for one preference pair.\n\n    logp_chosen:      log-probability of chosen response under current model\n    logp_rejected:    log-probability of rejected response under current model\n    logp_ref_chosen:  log-probability of chosen under reference (SFT) model\n    logp_ref_rejected: log-probability of rejected under reference (SFT) model\n    \"\"\"\n    # How much has the model diverged from reference, for each response?\n    chosen_improvement   = logp_chosen   - logp_ref_chosen\n    rejected_improvement = logp_rejected - logp_ref_rejected\n\n    # We want chosen to improve MORE than rejected\n    logit = beta * (chosen_improvement - rejected_improvement)\n    prob  = 1 / (1 + np.exp(-logit))   # sigmoid\n    loss  = -np.log(max(prob, 1e-10))\n    return chosen_improvement, rejected_improvement, logit, prob, loss\n\nprint('DPO Loss Scenarios (beta=0.5)')\nprint('='*80)\nprint(f'{\"Scenario\":<28} {\"cho_imp\":>8} {\"rej_imp\":>8} {\"logit\":>8} {\"P(right)\":>9} {\"loss\":>8}')\nprint('-'*80)\n\nscenarios = [\n    # (name, logp_chosen, logp_rejected, logp_ref_chosen, logp_ref_rejected)\n    # Reference (SFT) model assigns -5.0 to both\n    ('Ideal: chosen↑, rej↓',     -3.0, -7.0, -5.0, -5.0),\n    ('Good: chosen up more',      -3.0, -5.5, -5.0, -5.0),\n    ('Neutral: both same',        -5.0, -5.0, -5.0, -5.0),\n    ('Bad: chosen down more',     -7.0, -4.5, -5.0, -5.0),\n    ('Disaster: chosen↓, rej↑',  -7.0, -3.0, -5.0, -5.0),\n]\n\nfor name, lp_c, lp_r, lp_rc, lp_rr in scenarios:\n    c_imp, r_imp, logit, prob, loss = dpo_loss(lp_c, lp_r, lp_rc, lp_rr)\n    print(f'{name:<28} {c_imp:>+8.2f} {r_imp:>+8.2f} {logit:>+8.2f} {prob:>9.4f} {loss:>8.4f}')\n\nprint()\nprint('chosen_improvement  > 0: model raised probability of chosen response  (good)')\nprint('rejected_improvement< 0: model lowered probability of rejected response (good)')\nprint()\nprint('DPO vs RLHF summary:')\nprint('  RLHF: train reward model separately → PPO to optimize against it')\nprint('  DPO:  loss directly on (prompt, chosen, rejected) triplets')\nprint('  Same underlying math, DPO is ~5x simpler to implement and more stable')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "DPO Loss Scenarios (beta=0.5)\n================================================================================\nScenario                     cho_imp  rej_imp    logit  P(right)     loss\n--------------------------------------------------------------------------------\nIdeal: chosen↑, rej↓          +2.00    -2.00    +2.00    0.8808   0.1269\nGood: chosen up more          +2.00    -0.50    +1.25    0.7773   0.2518\nNeutral: both same            +0.00    +0.00    +0.00    0.5000   0.6931\nBad: chosen down more         -2.00    +0.50    -1.25    0.2227   1.5025\nDisaster: chosen↓, rej↑       -2.00    +2.00    -2.00    0.1192   2.1269\n\nchosen_improvement  > 0: model raised probability of chosen response  (good)\nrejected_improvement< 0: model lowered probability of rejected response (good)\n\nDPO vs RLHF summary:\n  RLHF: train reward model separately → PPO to optimize against it\n  DPO:  loss directly on (prompt, chosen, rejected) triplets\n  Same underlying math, DPO is ~5x simpler to implement and more stable"
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## RLHF vs DPO: Which to Use?
+
+```text
+RLHF (PPO):
+  + More flexible: reward model can be separately improved
+  + Can use online RL: generate responses and score them in real time
+  + Better for very large models when stability matters
+  - Requires training & maintaining a separate reward model
+  - PPO is notoriously unstable and hard to tune
+  - Much more engineering complexity
+
+DPO:
+  + Much simpler: one training loop, no separate RM
+  + More stable training
+  + Works well on most alignment tasks
+  - Offline only: uses fixed preference dataset (no online generation)
+  - Beta requires tuning; sensitivity to reference model quality
+  - Theoretically suboptimal for very large distribution shifts
+
+In practice: Most teams now start with DPO.
+InstructGPT (2022) used RLHF; LLaMA-2/3-chat, Mistral-Instruct, and
+most recent open models use DPO or variants.
+```
+
+---
+
+## What Alignment Actually Achieves
+
+Before alignment, a model trained purely on SFT produces plausible responses — it imitates the data. After alignment:
+
+```text
+Prompt: "My code has a bug. Here's the function: [code]"
+
+SFT only:                        After RLHF/DPO alignment:
+─────────────────────────────    ────────────────────────────────
+"Here's the function: [code]     "I can see the issue — on line 3,
+ which has a potential issue.     you're comparing `x` with `==`
+ The code might have bugs in      instead of `is`, which fails for
+ some edge cases."                None. Here's the fix: [code]
+                                  This also handles the edge case
+                                  where x is an empty list."
+
+SFT learned: responses about     Alignment learned: users prefer
+bugs sound like this.             responses that actually fix bugs.
+```
+
+The model learned to be *more useful*, not just *more fluent*. That's the gap alignment closes.
+
+---
+
+## Quick Recap
+
+- **SFT** trains on curated examples but can't distinguish good from mediocre responses — it imitates patterns.
+- **RLHF** (3 stages): SFT → Reward Model trained on `(prompt, chosen, rejected)` triplets → PPO uses the RM as a reward signal to update the policy.
+- **Reward Model (Bradley-Terry)**: Loss = `-log(sigmoid(r_chosen - r_rejected))`. Trains the RM to assign higher scores to human-preferred responses.
+- **PPO**: Ratio = `π_new / π_old`. Clipped to `[1-ε, 1+ε]` to prevent destabilizing large updates. KL penalty prevents reward hacking.
+- **DPO**: Directly optimizes on preference data without a separate RM. Loss = `-log(sigma(beta * (chosen_improvement - rejected_improvement)))`. Simpler, more stable, now preferred by most practitioners.
+- Both RLHF and DPO use the **SFT model as a reference** — the aligned model should not deviate too far from it (prevents degenerate outputs).

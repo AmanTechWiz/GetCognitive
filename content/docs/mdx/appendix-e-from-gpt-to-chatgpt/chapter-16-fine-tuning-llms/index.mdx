@@ -1,0 +1,274 @@
+---
+title: 16. Fine-Tuning LLMs
+lastUpdatedDate: '2026-08-11'
+---
+
+# 16. Fine-Tuning LLMs
+
+Pre-training gives you a model that knows an enormous amount about language, facts, and reasoning. What it doesn't know is what *you* want from it. Ask a raw pre-trained GPT "What is the capital of France?" and it might answer "Paris" — or it might continue the pattern and write "What is the capital of Germany? Berlin. What is the capital of Italy? Rome." because that's the kind of text that usually follows a trivia question in its training data.
+
+Fine-tuning is the process of training that general-purpose model further on a smaller, curated dataset that teaches it to behave the way you want. The architecture doesn't change. The optimizer doesn't change. The training loop is identical to pre-training. What changes is the data — and specifically, how you compute the loss on that data.
+
+---
+
+## What Pre-Training Actually Optimizes
+
+To understand why fine-tuning is needed, you have to be precise about what pre-training does.
+
+Pre-training optimizes one objective: **predict the next token**, over and over, across every position in every document. Given a piece of internet text like:
+
+```
+"The capital of France is Paris. The Eiffel Tower stands 330 metres..."
+```
+
+The model learns to predict "Paris" after "France is", "Eiffel" after "The", "Tower" after "Eiffel", and so on. It does this for hundreds of billions of tokens. By the end, the model's weights encode an enormous amount of world knowledge — because understanding the world helps predict what words come next.
+
+But the objective is completion, not helpfulness. The model learned to continue patterns, not to answer questions or follow instructions. These are different things.
+
+---
+
+## Supervised Fine-Tuning (SFT)
+
+**Supervised Fine-Tuning** is the first step in turning a pre-trained model into an assistant. You take a dataset of curated (instruction, response) pairs and train the model to produce the right response given the instruction.
+
+```text
+Pre-training data:           Fine-tuning data:
+--------------------         ---------------------
+"The cat sat on the mat."    Instruction: "Translate to French: Hello"
+"Paris is the capital of..."  Response: "Bonjour"
+"Scientists discovered that"  Instruction: "Summarize this article: ..."
+"stock markets fell today..."  Response: "The article discusses..."
+                              Instruction: "Write a Python function that..."
+                              Response: "def add(a, b):\n    return a + b"
+```
+
+The training loop is **identical** to pre-training:
+
+```text
+for each (instruction, response) pair:
+    1. Tokenize: [instruction tokens] + [response tokens]
+    2. Forward pass → logits
+    3. Compute cross-entropy loss
+    4. Backprop → update weights
+```
+
+Same five steps from Appendix D, Chapter 13. The only thing that changed is the dataset.
+
+---
+
+## The Loss Masking Problem
+
+Here's the subtle but critical part: you don't want to compute loss on the instruction. Only on the response.
+
+Think about it. The instruction "Translate to French: Hello" is the *input* — you gave it to the model. There's nothing to learn from predicting those tokens, because at inference time you won't ask the model to predict the question. You want it to predict the *answer*.
+
+If you compute loss over both instruction and response tokens:
+
+```text
+Input:  [Translate] [to] [French] [:] [Hello] [Bonjour]
+Loss:    L_1        L_2   L_3    L_4   L_5      L_6
+         ^------- wasted gradient --------^      ^useful
+```
+
+Those first five loss terms push the model to better predict "Translate to French: Hello" — which is useless and potentially harmful, since the model shouldn't expect to generate its own instructions at inference time.
+
+The fix: **mask the instruction tokens** in the labels by replacing them with `-100`. PyTorch's `CrossEntropyLoss` skips any position where the label is `-100`.
+
+```text
+Input IDs:   [Trans] [to] [French] [:] [Hello] [Bonjour] [<eos>]
+Labels:       [ -100] [-100] [-100] [-100] [-100]  [tok_id]  [<eos_id>]
+                ^---------- masked (ignored) ----------^  ^--- loss computed here
+```
+
+Only the response tokens contribute gradient. The model learns to produce good responses given instructions.
+
+```notebook
+{
+  "title": "Loss masking — why prompt tokens should not count toward the loss",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-loss-mask",
+      "type": "code",
+      "source": "import torch\nimport torch.nn.functional as F\n\n# Tiny vocabulary demo\n# 0=<pad>, 1=<bos>, 2=<eos>, 3=I, 4=love, 5=machine, 6=learning\n# Prompt: \"I love\" → Response: \"machine learning\"\n\nprompt_ids   = torch.tensor([3, 4])           # \"I love\" (the instruction)\nresponse_ids = torch.tensor([5, 6, 2])         # \"machine learning <eos>\"\n\n# Combined sequence: input is prompt+response[:-1], target is prompt+response[1:]\nfull_ids = torch.cat([prompt_ids, response_ids])\ninput_ids = full_ids[:-1]                       # [3, 4, 5, 6]  — fed to model\ntargets   = full_ids[1:]                        # [4, 5, 6, 2]  — what model should predict\n\nprint('Input  IDs:', input_ids.tolist(),  '→', [['I','love','machine','learning'][i-3] if i>=3 else str(i) for i in input_ids.tolist()])\nprint('Target IDs:', targets.tolist())\nprint()\n\n# Simulate logits (random — stand in for model output)\ntorch.manual_seed(42)\nvocab_size = 7\nlogits = torch.randn(len(input_ids), vocab_size)  # [4, 7]\n\n# --- WRONG: loss over ALL tokens including prompt ---\nloss_wrong = F.cross_entropy(logits, targets)\nprint(f'Loss WITHOUT masking: {loss_wrong.item():.4f}')\nprint('  (gradient flows through prompt tokens too — wasted signal)')\nprint()\n\n# --- CORRECT: mask prompt tokens with -100 ---\nprompt_len  = len(prompt_ids)  # 2\ntargets_masked = targets.clone()\ntargets_masked[:prompt_len] = -100  # mask first 2 positions (the prompt)\n\nprint('Masked targets:', targets_masked.tolist(), '  (-100 = ignored by loss)')\nloss_correct = F.cross_entropy(logits, targets_masked)\nprint(f'Loss WITH masking:    {loss_correct.item():.4f}')\nprint('  (gradient only flows through response tokens: \"machine\", \"learning\", \"<eos>\")')\nprint()\nprint('The masked loss is HIGHER — it only averages over 2 response positions')\nprint('instead of 4. That\\'s correct: harder tasks should have higher loss.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Input  IDs: [3, 4, 5, 6] → ['I', 'love', 'machine', 'learning']\nTarget IDs: [4, 5, 6, 2]\n\nLoss WITHOUT masking: 1.8312\n  (gradient flows through prompt tokens too — wasted signal)\n\nMasked targets: [-100, -100, 6, 2]   (-100 = ignored by loss)\nLoss WITH masking:    2.0967\n  (gradient only flows through response tokens: 'machine', 'learning', '<eos>')\n\nThe masked loss is HIGHER — it only averages over 2 response positions\ninstead of 4. That's correct: harder tasks should have higher loss."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Instruction Tuning: Teaching Generalization
+
+**Instruction tuning** is SFT with a specific goal: train on a *diverse* set of instructions so the model generalizes to instructions it has never seen before.
+
+If you only fine-tune on translation examples, you get a translator. If you fine-tune on thousands of different task types — translation, summarization, code generation, question answering, math, creative writing — the model learns the general concept of "follow this instruction." After that, it can often handle instruction types it wasn't explicitly trained on.
+
+```text
+Diverse instruction types in a good SFT dataset:
+
+  Classification:   "Is this review positive or negative? ..."
+  Extraction:       "List all dates mentioned in this text: ..."
+  Generation:       "Write a haiku about autumn leaves"
+  Transformation:   "Translate this to Spanish: ..."
+  Summarization:    "Summarize this in one sentence: ..."
+  Code:             "Write a Python function that reverses a string"
+  Math:             "What is 17 * 24?"
+  Reasoning:        "If Alice has 3 apples and gives Bob 1..."
+  Conversation:     "Hi, how are you?" / "I'm doing well, thanks!"
+  ...thousands more
+```
+
+The key insight from the InstructGPT paper (the paper that became ChatGPT): a model fine-tuned on 13,000 curated instruction-response pairs outperforms a model 100× its size trained only with pre-training. Quality and diversity of data matters more than quantity.
+
+---
+
+## Chat Templates: Formatting the Conversation
+
+When a model is fine-tuned to be an assistant, it needs a consistent format for multi-turn conversations. The model needs to know: where does the system prompt end? Where does the user's message start? Where should the assistant's response begin?
+
+This is solved with **chat templates** — special tokens or strings that wrap each part of the conversation. Different model families use different templates:
+
+```text
+ChatML format (GPT-4, many open models):
+  <|im_start|>system
+  You are a helpful assistant.
+  <|im_end|>
+  <|im_start|>user
+  What is 2+2?
+  <|im_end|>
+  <|im_start|>assistant
+  4
+  <|im_end|>
+
+LLaMA-3 format:
+  <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+  You are a helpful assistant.<|eot_id|>
+  <|start_header_id|>user<|end_header_id|>
+  What is 2+2?<|eot_id|>
+  <|start_header_id|>assistant<|end_header_id|>
+  4<|eot_id|>
+
+Alpaca format (early open-source models):
+  ### Instruction:
+  What is 2+2?
+
+  ### Response:
+  4
+```
+
+These aren't cosmetic. The model was trained on data formatted this way. If you use the wrong template at inference time, the model produces garbage — it's reading a structure it doesn't recognize.
+
+```notebook
+{
+  "title": "Chat templates — how a conversation looks to the model",
+  "runtime": "Python",
+  "cells": [
+    {
+      "id": "cell-chat-template",
+      "type": "code",
+      "source": "# Simulate what apply_chat_template does: wrap messages in model-specific tokens\n# This is what happens before tokenization in any HuggingFace chat model\n\ndef apply_chatml_template(messages):\n    \"\"\"ChatML format used by GPT-4 and many open models.\"\"\"\n    result = ''\n    for msg in messages:\n        result += f'<|im_start|>{msg[\"role\"]}\\n{msg[\"content\"]}\\n<|im_end|>\\n'\n    result += '<|im_start|>assistant\\n'  # prompt model to continue here\n    return result\n\ndef apply_alpaca_template(messages):\n    \"\"\"Alpaca format (no system message support).\"\"\"\n    result = (\n        'Below is an instruction that describes a task. '\n        'Write a response that appropriately completes the request.\\n\\n'\n    )\n    for msg in messages:\n        if msg['role'] == 'user':\n            result += f'### Instruction:\\n{msg[\"content\"]}\\n\\n'\n        elif msg['role'] == 'assistant':\n            result += f'### Response:\\n{msg[\"content\"]}\\n\\n'\n    result += '### Response:\\n'  # if last msg was user\n    return result\n\n# A two-turn conversation\nmessages = [\n    {'role': 'system',    'content': 'You are a helpful assistant.'},\n    {'role': 'user',      'content': 'What is 2 + 2?'},\n]\n\nprint('=== ChatML format (what the model actually receives) ===')\nchatml = apply_chatml_template(messages)\nprint(repr(chatml))\nprint()\nprint('Rendered:')\nprint(chatml)\nprint('--- The model generates from here ---')\nprint()\nprint('=== Token structure ===')\nspecial_tokens = ['<|im_start|>', '<|im_end|>']\nfor tok in special_tokens:\n    print(f'  {tok} → single token with a fixed ID')\nprint('  \"system\", \"user\", \"assistant\" → regular text tokens')\nprint()\nprint('Loss masking: during SFT training, only the assistant response tokens')\nprint('(the part after <|im_start|>assistant) contribute to the loss.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "=== ChatML format (what the model actually receives) ===\n'<|im_start|>system\\nYou are a helpful assistant.\\n<|im_end|>\\n<|im_start|>user\\nWhat is 2 + 2?\\n<|im_end|>\\n<|im_start|>assistant\\n'\n\nRendered:\n<|im_start|>system\nYou are a helpful assistant.\n<|im_end|>\n<|im_start|>user\nWhat is 2 + 2?\n<|im_end|>\n<|im_start|>assistant\n\n--- The model generates from here ---\n\n=== Token structure ===\n  <|im_start|> → single token with a fixed ID\n  <|im_end|> → single token with a fixed ID\n  \"system\", \"user\", \"assistant\" → regular text tokens\n\nLoss masking: during SFT training, only the assistant response tokens\n(the part after <|im_start|>assistant) contribute to the loss."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## The Full SFT Pipeline
+
+Putting it together — what happens from raw text to trained model:
+
+```text
+Raw conversation data
+  {
+    "messages": [
+      {"role": "user",      "content": "Translate to French: Hello"},
+      {"role": "assistant", "content": "Bonjour"}
+    ]
+  }
+         |
+         v apply_chat_template()
+         |
+  "<|im_start|>user\nTranslate to French: Hello\n<|im_end|>\n<|im_start|>assistant\nBonjour\n<|im_end|>"
+         |
+         v tokenizer.encode()
+         |
+  input_ids = [tok1, tok2, ..., tok_N]    shape: (seq_len,)
+         |
+         v create labels (shift by 1, mask prompt)
+         |
+  labels    = [-100, -100, ..., tok_k, tok_k+1, ..., -100]
+               ^--prompt masked--^   ^--response loss--^
+         |
+         v forward pass
+         |
+  logits = model(input_ids)               shape: (seq_len, vocab_size)
+         |
+         v cross_entropy(logits, labels)  — skips -100 positions
+         |
+  loss (scalar)
+         |
+         v loss.backward() → optimizer.step()
+         |
+  weights updated — model slightly better at producing that response
+```
+
+Repeat for thousands of examples. The model gradually shifts from "text completion" to "instruction following."
+
+---
+
+## SFT in Code: The Full Training Step
+
+```notebook
+{
+  "title": "Supervised fine-tuning — one complete training step",
+  "runtime": "Python · PyTorch",
+  "cells": [
+    {
+      "id": "cell-sft-step",
+      "type": "code",
+      "source": "import torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\n# ─── Minimal SFT dataset ─────────────────────────────────────────\n# Toy vocabulary: 0=<pad>, 1=<|im_start|>, 2=<|im_end|>, 3=user,\n# 4=assistant, 5=translate, 6=french, 7=hello, 8=bonjour, 9=\\n\nVOCAB_SIZE = 15\n\n# One training example (pre-formatted)\n# \"<|im_start|>user\\ntranslate\\nhello\\n<|im_end|>\\n<|im_start|>assistant\\nbonjour\\n<|im_end|>\"\n# Simplified token IDs:\nfull_sequence = torch.tensor([1, 3, 9, 5, 9, 7, 9, 2, 9, 1, 4, 9, 8, 9, 2])\n#                              ^--------- user prompt ----------^  ^-- assistant response --^\nprompt_length = 9  # tokens 0..8 are the prompt (including im_end + newline)\n\n# input = all but last token; target = all but first token\ninput_ids = full_sequence[:-1]   # shape (14,)\ntargets   = full_sequence[1:]    # shape (14,)\n\n# Mask prompt tokens in targets\ntargets_masked = targets.clone()\ntargets_masked[:prompt_length] = -100  # these don't contribute to loss\n\nprint('Full sequence length:', len(full_sequence))\nprint('Prompt length:', prompt_length, 'tokens')\nprint('Response length:', len(full_sequence) - prompt_length, 'tokens')\nprint()\nprint('Input IDs:      ', input_ids.tolist())\nprint('Targets (raw):  ', targets.tolist())\nprint('Targets (masked):', targets_masked.tolist())\nprint('  -100 positions are skipped by CrossEntropyLoss')\nprint()\n\n# ─── Tiny model (stand-in for real LLM) ─────────────────────────\ntorch.manual_seed(42)\nclass TinyLM(nn.Module):\n    def __init__(self, vocab_size, d_model=32):\n        super().__init__()\n        self.embed = nn.Embedding(vocab_size, d_model)\n        self.lm_head = nn.Linear(d_model, vocab_size, bias=False)\n    def forward(self, x):\n        return self.lm_head(self.embed(x))\n\nmodel = TinyLM(VOCAB_SIZE)\noptimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)\n\n# ─── One training step ───────────────────────────────────────────\nmodel.train()\nlogits = model(input_ids.unsqueeze(0))      # [1, 14, vocab_size]\nlogits = logits.squeeze(0)                  # [14, vocab_size]\n\nloss = F.cross_entropy(logits, targets_masked)  # -100 ignored automatically\n\noptimizer.zero_grad()\nloss.backward()\noptimizer.step()\n\nprint(f'Training loss: {loss.item():.4f}')\nprint(f'  (averaged over {(targets_masked != -100).sum().item()} response tokens)')\nprint()\nprint('The gradient only flows through response token positions.')\nprint('The prompt is a free input — no learning happens there.')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Full sequence length: 15\nPrompt length: 9 tokens\nResponse length: 6 tokens\n\nInput IDs:       [1, 3, 9, 5, 9, 7, 9, 2, 9, 1, 4, 9, 8, 9]\nTargets (raw):   [3, 9, 5, 9, 7, 9, 2, 9, 1, 4, 9, 8, 9, 2]\nTargets (masked): [-100, -100, -100, -100, -100, -100, -100, -100, -100, 4, 9, 8, 9, 2]\n  -100 positions are skipped by CrossEntropyLoss\n\nTraining loss: 2.6841\n  (averaged over 5 response tokens)\n\nThe gradient only flows through response token positions.\nThe prompt is a free input — no learning happens there."
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## What SFT Can and Can't Do
+
+SFT is powerful. A GPT-2 fine-tuned on a few thousand curated examples can follow instructions surprisingly well. But it has a fundamental limitation: it learns to *imitate* good responses, not to *prefer* them.
+
+If the training data contains a mix of good and mediocre responses, the model averages over them. It can't reliably prefer the helpful response over the plausible-sounding-but-wrong one. It has no concept of "this response is better than that response."
+
+That's what alignment training (Chapter 18) is for. But first — Chapter 17 covers how to fine-tune without burning 120GB of GPU memory.
+
+---
+
+## Quick Recap
+
+- **Pre-training** optimizes next-token prediction across all text. **Fine-tuning** continues that same training on curated (instruction, response) pairs.
+- The training loop is identical — what changes is the data and the **loss mask**.
+- **Loss masking** (`-100` labels): prompt tokens are masked so gradients only flow through response tokens. Getting this wrong wastes training signal.
+- **Instruction tuning**: SFT on *diverse* instruction types teaches the model to generalize to new instructions.
+- **Chat templates** format multi-turn conversations into a flat token sequence the model can process. Different model families use different templates — use the wrong one and inference breaks.
+- SFT teaches imitation of good responses, not preference between responses. Alignment training (Chapter 18) teaches the latter.

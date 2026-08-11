@@ -1,0 +1,295 @@
+---
+title: 19. How ChatGPT Works
+lastUpdatedDate: '2026-08-11'
+---
+
+# 19. How ChatGPT Works
+
+You've now seen all the pieces: a transformer that predicts next tokens (Appendix D), fine-tuning on instruction data (Chapter 16), LoRA for efficiency (Chapter 17), and alignment training (Chapter 18). ChatGPT is what you get when you assemble all of these and add a few more engineering choices on top.
+
+This chapter makes the full picture concrete — from the moment you type a message to the moment text starts streaming back.
+
+---
+
+## GPT-3 vs ChatGPT: The Same Architecture, Different Training
+
+This is important enough to say explicitly: **GPT-3 and ChatGPT use the same transformer architecture**. Same attention mechanism. Same feed-forward blocks. Same residual connections. Same positional encoding. The architecture from Appendix C and D is unchanged.
+
+What changed is the training:
+
+```text
+GPT-3 (base model):
+  Training data:  ~500B tokens of internet text (CommonCrawl, WebText, Books, Wikipedia)
+  Objective:      Next-token prediction
+  Result:         Knows an enormous amount; will complete any text pattern
+  Problem:        Doesn't know to answer questions; can be harmful; inconsistent
+
+ChatGPT (InstructGPT):
+  Stage 1 — SFT:    ~13,000 curated (instruction, response) pairs
+  Stage 2 — RM:     ~33,000 human preference comparisons
+  Stage 3 — PPO:    Fine-tune with reward signal from RM
+  Result:           Follows instructions, prefers helpful responses, avoids harm
+```
+
+The InstructGPT paper (Ouyang et al. 2022) found that a 1.3B model trained with RLHF was preferred by human raters over a 175B model trained only with supervised learning. Alignment training is extraordinarily data-efficient.
+
+---
+
+## What a ChatGPT Request Actually Looks Like
+
+When you send a message to ChatGPT, what arrives at the model is not just your message. It's your message wrapped in a **conversation structure** that the model was trained to understand:
+
+```text
+What you type:                 What the model receives:
+────────────────               ────────────────────────────────────────────
+"How do I reverse a            <|im_start|>system
+ list in Python?"              You are a helpful assistant.
+                               <|im_end|>
+                               <|im_start|>user
+                               How do I reverse a list in Python?
+                               <|im_end|>
+                               <|im_start|>assistant
+                               ← model generates from here
+```
+
+The model's job is to predict what comes after `<|im_start|>assistant\n`. Because it was trained on millions of examples where good responses follow this pattern, it produces a relevant, helpful answer.
+
+---
+
+## The System Prompt
+
+The first message in the conversation is always a **system prompt** — instructions to the model about how to behave. You don't write this; the platform does.
+
+```text
+System prompt (you don't see this):
+  "You are ChatGPT, a helpful assistant made by OpenAI.
+   You are knowledgeable, honest, and concise.
+   Current date: August 11, 2026.
+   You cannot browse the internet or access files."
+
+User turn (you write this):
+  "What happened in the news today?"
+
+Model response:
+  "I don't have access to real-time information, and my training
+   data has a cutoff date. For today's news, I'd recommend
+   checking a news site like BBC, Reuters, or Google News."
+```
+
+The model produces that responsible answer not because it was hardcoded, but because:
+1. The system prompt told it about its limitations
+2. Alignment training taught it to be honest about what it doesn't know
+
+The system prompt is just more tokens — it gets the same transformer processing as everything else. It has no special status mechanically, only behaviorally (the model was trained to respect it).
+
+---
+
+## Multi-Turn Conversations
+
+Every time you send a new message, the **entire conversation history** is sent to the model again. The model has no persistent state — it has no memory between calls. It only knows what's in the context window:
+
+```text
+Turn 1:
+  Context:  [system] + [user: "What's 2+2?"]
+  Model generates: "4"
+
+Turn 2:
+  Context:  [system] + [user: "What's 2+2?"] + [assistant: "4"]
+               + [user: "Now multiply that by 5"]
+  Model generates: "4 × 5 = 20"  ← "knows" about the previous answer
+                                     because it's in the context
+
+Turn 3:
+  Context:  [system] + [turn 1] + [turn 2] + [user: "Now add 3"]
+  Model generates: "20 + 3 = 23"
+
+... this continues until the context window fills up
+```
+
+The context is a flat sequence of tokens. The model doesn't think "oh this is a multi-turn conversation" — it just predicts what comes next given all the tokens it can see. The conversation structure is implicit in the formatting.
+
+```text
+Context window limit:
+  GPT-3.5:   ~4,096 tokens  (~3,000 words)
+  GPT-4:     ~8,192 tokens  (~6,000 words)
+  GPT-4-turbo: 128,000 tokens (~95,000 words)
+  Claude 3:  200,000 tokens (~150,000 words)
+
+When the conversation exceeds the limit:
+  Option 1: Truncate oldest messages (lose early context)
+  Option 2: Summarize earlier conversation
+  Option 3: Use retrieval to fetch relevant history
+```
+
+---
+
+## Token Generation: One Token at a Time
+
+The model doesn't generate the full response at once. It generates **one token at a time**, appending each token to the sequence and using the updated sequence to predict the next:
+
+```text
+After user turn, context ends with: "...user\nHow do I reverse a list?\n<|im_end|>\n<|im_start|>assistant\n"
+
+Step 1: Model sees full context → predicts token distribution over vocabulary
+        Highest prob token: "You" (ID 2) → append
+
+Step 2: Context now ends with "...assistant\nYou"
+        → predicts next token → "can" (ID 47) → append
+
+Step 3: Context now ends with "...assistant\nYou can"
+        → predicts next → "reverse" → append
+
+... continues until model generates <|im_end|> (stop token)
+
+Final: "You can reverse a list in Python using:\n\n```python\nmy_list.reverse()\n# or\nreversed_list = my_list[::-1]\n```"
+```
+
+```text
+Token generation is autoregressive:
+
+  t=0: context = [all previous tokens]   → predict token_1
+  t=1: context = [... + token_1]         → predict token_2
+  t=2: context = [... + token_1 + token_2] → predict token_3
+  ...
+  t=N: context = [...+ token_N-1]        → predict <|im_end|> → STOP
+
+  Each step: one full forward pass through all 96 transformer blocks
+  Cost: O(N × context_length) — gets more expensive with longer responses
+```
+
+**Streaming** is why you see text appearing word-by-word in ChatGPT — the server sends each token as soon as it's generated, instead of waiting for the full response.
+
+---
+
+## Temperature, top-p, and Why Responses Vary
+
+The model outputs a probability distribution over ~50,000 tokens at each step. **Sampling** is how you pick the next token from that distribution:
+
+```text
+Example logit distribution at one step:
+  "the"    → 0.35 (highest)
+  "a"      → 0.20
+  "my"     → 0.12
+  "some"   → 0.08
+  "this"   → 0.06
+  ...      (50,000+ other tokens with tiny probs)
+
+Temperature T controls sharpness:
+  T=0   (greedy): always pick "the"  → deterministic, repetitive
+  T=0.7:          probabilities spread out slightly  → usually "the"
+  T=1.0:          use probabilities as-is  → varied
+  T=2.0:          flatten the distribution  → very random, often nonsensical
+
+  Scaled logits: logit_scaled = logit / T
+  Then softmax → new probability distribution
+
+top-p (nucleus sampling): only consider tokens whose cumulative prob reaches p
+  top-p=0.9: include only tokens until their probs sum to 90%
+  → typically 5-50 tokens considered; cuts off the long tail of unlikely tokens
+```
+
+ChatGPT uses temperature ≈ 0.7 and top-p ≈ 0.9 by default. This is why two identical questions to ChatGPT produce slightly different wording — the sampling is stochastic.
+
+```notebook
+{
+  "title": "How temperature changes what the model picks",
+  "runtime": "Python · NumPy",
+  "cells": [
+    {
+      "id": "cell-temperature",
+      "type": "code",
+      "source": "import numpy as np\n\ndef softmax(x):\n    e = np.exp(x - x.max())\n    return e / e.sum()\n\n# Simulated logits for next-token prediction\n# (what the model outputs before sampling)\ntoken_names = ['the', 'a', 'my', 'some', 'this', 'your', 'their', 'any']\nlogits      = np.array([3.0, 2.2, 1.8, 1.4, 1.1, 0.9, 0.7, 0.5])\n\nprint('Effect of temperature on token probability distribution')\nprint('='*65)\nprint(f'{\"Token\":<8}  {\"logit\":>6}  ', end='')\nfor T in [0.3, 0.7, 1.0, 1.5, 2.0]:\n    print(f'{f\"T={T}\":>8}', end='')\nprint()\nprint('-'*65)\n\nfor i, (token, logit) in enumerate(zip(token_names, logits)):\n    print(f'{token:<8}  {logit:>6.1f}  ', end='')\n    for T in [0.3, 0.7, 1.0, 1.5, 2.0]:\n        probs = softmax(logits / T)\n        print(f'{probs[i]:>8.3f}', end='')\n    print()\n\nprint()\nprint('Top token prob at each temperature:')\nfor T in [0.3, 0.7, 1.0, 1.5, 2.0]:\n    probs = softmax(logits / T)\n    print(f'  T={T}: \"{token_names[0]}\" gets {probs[0]:.3f} probability  (top token)')\n\nprint()\nprint('Low T: model always picks \"the\" (deterministic, boring)')\nprint('High T: probability spread across many tokens (creative, risky)')\nprint('ChatGPT default ~0.7: mostly picks likely tokens, some variety')",
+      "outputs": [
+        {
+          "type": "text",
+          "content": "Effect of temperature on token probability distribution\n=================================================================\nToken     logit     T=0.3    T=0.7    T=1.0    T=1.5    T=2.0\n-----------------------------------------------------------------\nthe        3.0     0.946    0.563    0.350    0.227    0.174\na          2.2     0.046    0.210    0.200    0.171    0.151\nmy         1.8     0.007    0.104    0.143    0.140    0.132\nsome       1.4     0.001    0.051    0.103    0.114    0.115\nthis       1.1     0.000    0.033    0.080    0.098    0.104\nyour       0.9     0.000    0.024    0.067    0.088    0.097\ntheir      0.7     0.000    0.016    0.055    0.079    0.090\nany        0.5     0.000    0.011    0.045    0.071    0.083\n\nTop token prob at each temperature:\n  T=0.3: \"the\" gets 0.946 probability  (top token)\n  T=0.7: \"the\" gets 0.563 probability  (top token)\n  T=1.0: \"the\" gets 0.350 probability  (top token)\n  T=1.5: \"the\" gets 0.227 probability  (top token)\n  T=2.0: \"the\" gets 0.174 probability  (top token)\n\nLow T: model always picks \"the\" (deterministic, boring)\nHigh T: probability spread across many tokens (creative, risky)\nChatGPT default ~0.7: mostly picks likely tokens, some variety"
+        }
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## What ChatGPT Doesn't Have (and Why It Matters)
+
+Understanding the limitations requires understanding the architecture:
+
+```text
+NO persistent memory across conversations:
+  Each conversation starts from scratch. The model has no memory of
+  previous conversations. "Remember when I told you my name?" — it doesn't.
+  Memory features (like ChatGPT's "Memory" feature) work by injecting
+  retrieved facts into the system prompt, not by the model "remembering".
+
+NO real-time information:
+  The model's knowledge is frozen at its training cutoff.
+  It cannot search the web unless given a tool that does so (and explicitly
+  injects the results into the context).
+
+NO grounding in reality:
+  The model generates tokens that are likely to follow, not tokens that are
+  necessarily true. Hallucination happens because "I don't know" is often
+  a less likely continuation than a confident-sounding false answer.
+
+NO reasoning beyond context:
+  Everything the model "thinks" happens in one forward pass per token.
+  There's no separate scratchpad, no persistent state, no internal monologue
+  beyond what appears in the context window itself.
+  (Chain-of-thought prompting works because it forces the model to write
+  its reasoning into the context, making that reasoning visible to future steps.)
+```
+
+---
+
+## The Complete Picture
+
+Now you can trace a ChatGPT response from start to finish:
+
+```text
+You:     "Explain quantum entanglement simply"
+         ↓
+Platform adds system prompt:
+         "<|im_start|>system\nYou are a helpful assistant...<|im_end|>\n"
+         ↓
+Your message formatted:
+         "<|im_start|>user\nExplain quantum entanglement simply\n<|im_end|>\n"
+         ↓
+Assistant prompt appended:
+         "<|im_start|>assistant\n"
+         ↓
+Full token sequence sent to model (say 50 tokens total)
+         ↓
+Model: 96 transformer layers, 175B parameters
+  Each token attends to every previous token
+  FFN processes each token independently
+  LM head projects to 50,257 vocabulary logits
+         ↓
+Sample next token (T≈0.7, top-p≈0.9)
+  → "Quantum" (high prob given context)
+         ↓
+Append "Quantum", repeat with 51-token context
+  → "entanglement" → append → 52 tokens
+         ↓
+Continue until <|im_end|> is generated
+  (typically 50-500 tokens for a response)
+         ↓
+Stream tokens to your browser as they're generated
+         ↓
+You see text appearing word by word
+```
+
+The entire intelligence is in those 175B parameters, shaped by pre-training on 500B tokens and alignment training on ~50,000 human-curated examples. Same architecture as Appendix D's tiny GPT — just scaled up by a factor of nearly a million.
+
+---
+
+## Quick Recap
+
+- **ChatGPT uses the same transformer architecture as GPT-3.** The difference is training: SFT → RM → PPO (RLHF) — all covered in this appendix.
+- **System prompt**: instructions from the platform injected before your message. The model is trained to respect them. Just more tokens.
+- **Conversation history**: the entire dialogue is re-sent on every turn. The model has no persistent state — it can only see what's in the context window.
+- **Autoregressive generation**: one token at a time, each token generated from a full forward pass. O(response_length × context_length) total computation.
+- **Temperature and top-p**: control how the model samples from the probability distribution. Low T = deterministic; high T = varied/creative.
+- **Hallucination** is a feature of the architecture, not a bug to be patched — the model generates likely tokens, not true ones.
+- **No persistent memory, no real-time data, no hidden reasoning** — everything the model "knows" and "thinks" is either in its weights (from training) or in the context window (from the conversation).
