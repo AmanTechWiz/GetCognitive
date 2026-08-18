@@ -29,11 +29,23 @@ jobs:
         with:
           fetch-depth: 2
 
+      # ── Validate required secrets ──────────────────────────────────────────
+      - name: Validate secrets
+        env:
+          MEDIA_API_KEY: ${{ secrets.MEDIA_API_KEY }}
+        run: |
+          if [ -z "$MEDIA_API_KEY" ]; then
+            echo "::error::MEDIA_API_KEY secret is not set. Aborting."
+            exit 1
+          fi
+
       # ── Determine which files changed ─────────────────────────────────────
       - name: Find changed media files
         id: changed
+        env:
+          FULL_SYNC: ${{ github.event.inputs.full_sync }}
         run: |
-          if [ "${{ github.event.inputs.full_sync }}" = "true" ]; then
+          if [ "$FULL_SYNC" = "true" ]; then
             echo "Full sync requested — gathering all files in media/"
             FILES=$(find media -type f | sort)
           else
@@ -69,6 +81,7 @@ jobs:
 
             echo "→ uploading: $file  →  $url"
 
+            echo "" > /tmp/curl_response.txt
             http_code=$(curl -s -o /tmp/curl_response.txt -w "%{http_code}" \
               -X PUT \
               -H "X-API-Key: $API_KEY" \
@@ -80,7 +93,8 @@ jobs:
               echo "   ✓ $file ($http_code)"
             else
               echo "   ✗ FAILED $file — HTTP $http_code"
-              cat /tmp/curl_response.txt
+              # Sanitize response before logging (avoid leaking sensitive data)
+              head -c 500 /tmp/curl_response.txt
               FAILED=$((FAILED + 1))
             fi
           done < /tmp/media-files.txt
