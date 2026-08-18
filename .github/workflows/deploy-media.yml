@@ -1,0 +1,95 @@
+name: Deploy Media to Phone
+
+# Runs only when files inside media/ are pushed to main.
+# Uploads ONLY the changed media files to the phone via the Cloudflare Tunnel
+# HTTP API at https://uploads.getcognitive.in (server.py / s3lite).
+# Files are then publicly readable at https://uploads.getcognitive.in/files/...
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'media/**'
+  workflow_dispatch:
+    inputs:
+      full_sync:
+        description: 'Upload ALL files in media/ instead of just changed ones'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  deploy-media:
+    name: Upload media to phone
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      # ── Determine which files changed ─────────────────────────────────────
+      - name: Find changed media files
+        id: changed
+        run: |
+          if [ "${{ github.event.inputs.full_sync }}" = "true" ]; then
+            echo "Full sync requested — gathering all files in media/"
+            FILES=$(find media -type f | sort)
+          else
+            echo "Diffing against previous commit"
+            FILES=$(git diff --name-only --diff-filter=ACM HEAD~1 HEAD -- 'media/**' | sort)
+          fi
+
+          if [ -z "$FILES" ]; then
+            echo "No media files changed. Skipping upload."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Files to upload:"
+            echo "$FILES"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            printf '%s\n' "$FILES" > /tmp/media-files.txt
+          fi
+
+      # ── Upload each file via HTTP PUT to the s3lite API ───────────────────
+      - name: Upload changed files to phone
+        if: steps.changed.outputs.skip != 'true'
+        env:
+          UPLOAD_BASE_URL: ${{ secrets.MEDIA_UPLOAD_URL || 'https://uploads.getcognitive.in' }}
+          API_KEY: ${{ secrets.MEDIA_API_KEY }}
+        run: |
+          FAILED=0
+          while IFS= read -r file; do
+            # Strip the leading "media/" prefix so the remote key mirrors the
+            # folder structure under the server's STORAGE_DIR.
+            # local:  media/part-i-foundations/chapter-1/1-1.wav
+            # remote key: part-i-foundations/chapter-1/1-1.wav
+            remote_key="${file#media/}"
+            url="$UPLOAD_BASE_URL/files/$remote_key"
+
+            echo "→ uploading: $file  →  $url"
+
+            http_code=$(curl -s -o /tmp/curl_response.txt -w "%{http_code}" \
+              -X PUT \
+              -H "X-API-Key: $API_KEY" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$file" \
+              "$url")
+
+            if [ "$http_code" = "201" ] || [ "$http_code" = "200" ]; then
+              echo "   ✓ $file ($http_code)"
+            else
+              echo "   ✗ FAILED $file — HTTP $http_code"
+              cat /tmp/curl_response.txt
+              FAILED=$((FAILED + 1))
+            fi
+          done < /tmp/media-files.txt
+
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED file(s) failed to upload."
+            exit 1
+          fi
+
+      - name: Done
+        if: steps.changed.outputs.skip != 'true'
+        run: echo "Media upload complete."

@@ -1,0 +1,3 @@
+# Media files are served from the phone via Cloudflare Tunnel (media.getcognitive.in).
+# They must not be uploaded to or served from Vercel.
+media/
