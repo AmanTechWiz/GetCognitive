@@ -13,3 +13,7 @@ dev.out.log
 dev-server.log
 dev-server.err.log
 *.log
+
+# Old audio path — media files now live in media/ and are served from the phone.
+# Do not put large files in public/ — they will be bundled into the Vercel build.
+public/Audios/

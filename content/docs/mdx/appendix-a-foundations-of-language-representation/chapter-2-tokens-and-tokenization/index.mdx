@@ -1,6 +1,7 @@
 ---
 title: 2. Tokens and Tokenization
 lastUpdatedDate: '2026-08-09'
+thumbnail: /appendix-a/02-tokens/thumbnail.jpeg
 ---
 
 # 2. Tokens and Tokenization
@@ -166,6 +167,8 @@ Let's watch it happen step by step.
   ]
 }
 ```
+
+![How tokenization is not word-by-word](/appendix-a/02-tokens/how-tokenization-is-not-word-by-word.jpeg)
 
 Watch what happened. The algorithm didn't need to be told that "cat" or "dog" are meaningful words — it figured that out purely from frequency. `e + ' '` merged first because word endings appear constantly. Then `t + h` because "the" dominates English. By merge 9, the algorithm had independently discovered that `c-a-t` belongs together.
 
