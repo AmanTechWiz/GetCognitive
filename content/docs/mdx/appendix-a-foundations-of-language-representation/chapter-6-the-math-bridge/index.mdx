@@ -124,6 +124,8 @@ Here's a problem with matrix multiplication: no matter how many layers you stack
 
 **Activation functions** break this. After each matrix multiplication, you apply a simple non-linear function element-by-element to the result. This forces each layer to be genuinely different from the last — the model can learn curved, complex decision boundaries, not just straight lines.
 
+![sigmoid](/appendix-a/06-maths/sigmoid.png)
+
 The three activations you'll encounter most:
 
 **ReLU** (Rectified Linear Unit) — the simplest: replace every negative number with zero.
@@ -132,7 +134,14 @@ ReLU(x) = max(0, x)
 ReLU([-2, -1, 0, 1, 2]) = [0, 0, 0, 1, 2]
 ```
 
+![ReLU](/appendix-a/06-maths/relu.png)
+
+(another activation function used a lot is tanh):
+![tanh](/appendix-a/06-maths/tanh.png)
+
 **GELU** (Gaussian Error Linear Unit) — a smooth version of ReLU. Used in most modern Transformers including GPT and BERT. Allows small negative values through rather than hard-zeroing them.
+
+![GeLU](/appendix-a/06-maths/gelu.png)
 
 **Softmax** — turns a vector of arbitrary numbers into a probability distribution: all values become positive and sum to 1. Used at the output of a language model to convert logits into "probability of this token being next."
 
@@ -140,6 +149,8 @@ ReLU([-2, -1, 0, 1, 2]) = [0, 0, 0, 1, 2]
 softmax([2.0, 1.0, 0.5]) = [0.62, 0.23, 0.15]
                                 ↑ all positive, sum = 1.0
 ```
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/TYNs2q6AGTo?si=e9UEJEphgPAvp23r" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 ```notebook
 {
@@ -160,6 +171,8 @@ softmax([2.0, 1.0, 0.5]) = [0.62, 0.23, 0.15]
   ]
 }
 ```
+
+![comparison](/appendix-a/06-maths/comparison.png)
 
 ---
 
@@ -220,7 +233,7 @@ Here's the full journey from text to prediction, in the vocabulary you now have:
 Every arrow in that chain is either a tensor operation, a matrix multiply, or an activation function. There's nothing else.
 
 
-![how tokens are predicted](/appendix-a/06-maths//token-predict.png)
+![how tokens are predicted](/appendix-a/06-maths/token-predict.png)
 
 
 ---
