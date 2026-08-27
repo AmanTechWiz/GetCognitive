@@ -146,7 +146,7 @@ export function getAllDocs(): DocPage[] {
     if (aPath === bPath) {
       return a.isChapterOverview ? -1 : 1;
     }
-    return aPath.localeCompare(bPath);
+    return aPath.localeCompare(bPath, undefined, { numeric: true, sensitivity: 'base' });
   });
 }
 
