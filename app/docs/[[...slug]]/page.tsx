@@ -28,7 +28,7 @@ export default async function DocsPage({ params }: { params: Promise<{ slug?: st
   const { slug = [] } = await params;
   if (slug.length === 0) {
     redirect(
-      '/docs/part-i-foundations/chapter-1-from-prompt-to-production/11-the-lifecycle-of-an-ai-request',
+      '/docs/part-01-foundations/chapter-01-from-prompt-to-production/11-the-lifecycle-of-an-ai-request',
     );
   }
   const page = getDocBySlug(slug);

@@ -29,14 +29,14 @@ const sections = [
   {
     title: 'Chapters',
     description: 'Long-form tutorials',
-    href: '/docs/foundations/from-prompt-to-production',
+    href: '/docs/part-01-foundations/chapter-01-from-prompt-to-production',
     color: 'var(--accent)',
     icon: Book,
   },
   {
     title: 'Appendices',
     description: 'References and checklists',
-    href: '/docs/appendix/core-concepts',
+    href: '/docs/appendix-a-foundations-of-language-representation',
     color: 'var(--fd-primary)',
     icon: ClipboardList,
   },

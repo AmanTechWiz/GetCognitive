@@ -14,9 +14,9 @@ const footerGroups = [
   {
     title: 'Topics',
     links: [
-      { href: '/docs/foundations/from-prompt-to-production', label: 'Foundations' },
-      { href: '/docs/retrieval-systems', label: 'Retrieval' },
-      { href: '/docs/ai-security', label: 'Security' },
+      { href: '/docs/part-01-foundations', label: 'Foundations' },
+      { href: '/docs/part-04-retrieval-systems', label: 'Retrieval' },
+      { href: '/docs/part-07-ai-security', label: 'Security' },
     ],
   },
   {

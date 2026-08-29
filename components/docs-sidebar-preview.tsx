@@ -60,8 +60,8 @@ export function DocsSidebarPreview({ docs = [] }: { docs?: any[] }) {
   const pathname = usePathname();
   const [filter, setFilter] = useState('');
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    'part-i-foundations': true,
-    'part-ii-agent-systems': true,
+    'part-01-foundations': true,
+    'part-02-high-performance-inference': true,
   });
   const [openChapters, setOpenChapters] = useState<Record<string, boolean>>({});
 

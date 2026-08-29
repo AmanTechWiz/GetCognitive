@@ -83,7 +83,7 @@ export function StoryControl({
   }, [query, searchItems]);
 
   const defaultUrl =
-    '/docs/part-i-foundations/chapter-1-from-prompt-to-production/11-the-lifecycle-of-an-ai-request';
+    '/docs/part-01-foundations/chapter-01-from-prompt-to-production/11-the-lifecycle-of-an-ai-request';
 
   return (
     <div
