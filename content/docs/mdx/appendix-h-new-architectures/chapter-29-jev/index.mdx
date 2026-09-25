@@ -1,0 +1,394 @@
+---
+title: '29. Jev: System One Models'
+lastUpdatedDate: '2026-09-25'
+thumbnail: /appendix-h/29-jev/thumbnail.png
+author: Amandeep
+authorSocials: 'https://www.linkedin.com/in/amandeep29/'
+---
+
+# 29. Jev: System One Models
+
+## The if-statement could not keep up
+
+Every programmer learns the if-statement in week one. If the user is logged in, show the dashboard. If the payment failed, send an email. Clean data, microsecond decisions, done.
+
+Then the modern web showed up with angry customer mail, vague bug reports, and support tickets like "I've been trying to access video generation models for 4 days and even after paying for max subscription nothing works!!" Try writing a regex for that. I will wait.
+
+So the industry settled on one shared workaround. Everywhere code needs a drop of human judgment, we wrap an LLM in an API call and pray. Peek into the background workers of any startup today and you will find this exact code:
+
+```js
+// Please do not touch. Please.
+const prompt = `You are a strict JSON classifier.
+Return only valid JSON matching {"department": "billing" | "tech" | "sales"}.
+Do not include markdown. Do not include apologies. Do not say "Sure, here is your JSON".`;
+
+const response = await client.responses.create({
+  model: "gpt-5.6-luna",
+  messages: [{ role: "user", content: prompt + "\nTicket: " + rawTicketText }],
+  response_format: { type: "json_object" }
+});
+
+const { department } = JSON.parse(response.choices[0].message.content);
+```
+
+All you wanted was one decision --> which inbox gets the ticket.
+
+What you got instead was a 2500 millisecond pause while a GPU cluster allocates hundreds of gigabytes of VRAM to predict words one at a time, at five times the cost of reading the input. And at 4 AM on a Sunday the whole thing falls over because the model slipped an escaped character into the output and JSON.parse threw an unhandled SyntaxError.
+
+![The expensive if-statement](/appendix-h/29-jev/01-llm-if-statement.png)
+
+An autoregressive text generator, a tool trained to chat with humans, got stuck into your infrastructure to evaluate an if/else condition. It wrecks your p99, inflates the cloud bill, and forces you to write retry logic to clean up after an over-polite chatbot.
+
+Software talking to software never needed text generation in the first place.
+
+## What Jev actually is
+
+Jev comes from TypeSafe AI, a San Francisco lab that came out of stealth on September 15, 2026 with $40M in seed funding. The work was led by Diogo Almeida, described as a co-creator of ChatGPT and a co-inventor of RLHF. Those are the company's claims, not verified facts.
+
+TypeSafe calls Jev a System One model, borrowing from Daniel Kahneman's <a href="https://www.google.com/search?q=Thinking%2C+Fast+and+Slow+by+Daniel+Kahneman" target="_blank" rel="noopener noreferrer"><em>Thinking, Fast and Slow</em></a>. System 1 is fast intuitive judgment. System 2 is slow deliberate reasoning. Jev is built to be System 1 for software. It reads a slice of application state and returns typed decisions instead of prose.
+
+It does not chat. It answers "Spam or not?", "Which tool should this agent use?", "Does this need a human?" Then it stops. No streaming, no explanations, no thinking history.
+
+Everything Jev returns is one of three shapes:
+
+```ts
+import { JevClient, noul, choice, score } from "@typesafe/jev";
+
+const client = new JevClient({ apiKey: process.env.TYPESAFE_API_KEY });
+
+const { answers } = await client.systemOne({
+  state: { message: "Where is my order?? It has been 9 days!!" },
+  questions: {
+    is_angry: noul("Does `message` express anger or frustration?"),
+    intent: choice("What does the author of `message` want?", {
+      order_status: "Asking where an order is, tracking info",
+      complaint: "Unhappy with service, wants a resolution",
+      other: "Anything else",
+    }),
+    urgency: score("How urgent is `message`?", [
+      "No rush; informational",
+      "Wants a response today",
+      "Furious; needs attention now",
+    ]),
+  },
+});
+
+// answers.is_angry.noul   -> 0.91
+// answers.intent.choice   -> "order_status" (confidence 0.83)
+// answers.urgency.score   -> 1.7
+```
+
+- ***Noul*** is a probability that a condition is true.
+- ***Choice*** picks one of your options, up to 255 of them, and returns per-option probabilities.
+- ***Score*** places the input on your ordered rubric, 2 to 10 levels, and returns the full distribution.
+
+![Anatomy of one systemOne() call](/appendix-h/29-jev/02-anatomy-of-a-call.png)
+
+The pricing is inverted from everything you know. Input tokens cost $0.042 per million. Output decisions are free, because there are no output tokens. In TypeSafe's 27-question benchmark the whole batch cost $0.000081 versus $0.013880 for the GPT 5.6 Terra.
+
+Hard limits, from the docs:
+
+- Shared state plus all questions caps at 64,000 tokens.
+- One question plus state caps at 32,000 tokens.
+- Text only, no images or audio yet.
+
+## How it differs from the LLMs you use daily
+
+Every AI tool on your machine wants to be the main character. ChatGPT wants to write essays. Cursor and Claude Code act like hyperactive junior devs with terminal access, looping until something works.
+
+Jev has zero interest in being an agent. It will not write your pull request or touch your terminal. It works like a circuit breaker. Your app feeds it a slice of context, asks specific questions, gets back numbers in milliseconds. Then it stops.
+
+That means Jev is not competing with your coding agent. It sits inside the plumbing. Before an autonomous agent runs a sketchy shell command, Jev checks whether the command is harmless or about to wipe the database:
+
+```ts
+const { answers } = await client.systemOne({
+  state: { command: "rm -rf ./build_cache" },
+  questions: {
+    destructive: noul("Does `command` delete data outside a temp or cache directory?"),
+    needs_human: noul("Should a human approve `command` before it runs?"),
+  },
+});
+
+if (answers.destructive.noul > 0.7 || answers.needs_human.noul > 0.6) {
+  await requestApproval(command); // block and escalate
+} else {
+  await exec(command);
+}
+```
+
+![Gating the agent](/appendix-h/29-jev/03-agent-gate.png)
+
+The agent still writes the software. Jev handles the pre-decision that tells the system which branch to execute.
+
+Under the hood, the training story is the interesting part. RLHF optimizes for fluent human-preferred prose. RLVR optimizes for slow step-by-step reasoning. TypeSafe's RLCD, Reinforcement Learning for Calibrated Decisions, skips both and optimizes directly for calibrated judgment in a single parallel pass. The architecture itself has not been disclosed, so treat the mechanism as described by the vendor.
+
+![Staircase vs landing](/appendix-h/29-jev/04-system-one-vs-autoregressive.png)
+
+## Most requests do not deserve an LLM
+
+Not every query needs a reasoning engine that burns cents and seconds. An order tracking query needs a database read. A product question needs documentation RAG. An angry churn risk needs a human.
+
+Jev shines as the triage layer right behind your API gateway:
+
+```ts
+const { answers } = await client.systemOne({
+  state: { message },
+  questions: {
+    intent: choice("What does the author of `message` want?", {
+      order_status: "Where is my order, tracking, shipping",
+      product_question: "How a product works, specs, compatibility",
+      return_exchange: "Return, exchange, or replace an item",
+      complaint: "Unhappy, wants a resolution",
+      other: "Anything else",
+    }),
+    complexity: score("How much thought does a good reply need?", [
+      "A lookup or one-line fact",
+      "A short explanation from docs",
+      "A judgment call or an upset customer",
+    ]),
+  },
+});
+
+if (answers.intent.confidence < 0.5) return routeToHuman(message);
+
+switch (answers.intent.choice) {
+  case "order_status":
+    return lookupOrder(message); // zero LLM cost, plain DB query
+  case "product_question":
+    return answerWithLLM(message, PRODUCT_CONTEXT);
+  case "return_exchange":
+    return answerWithLLM(message, RETURNS_CONTEXT);
+  case "complaint":
+    return answers.complexity.score > 1
+      ? routeToHuman(message)
+      : answerWithLLM(message, COMPLAINT_CONTEXT);
+}
+```
+
+The order lookup never touches a model. Docs questions get dedicated context. Complaints split between LLM and humans on the complexity score. Expensive resources run only when the complexity justifies them.
+
+![Triage gateway](/appendix-h/29-jev/06-triage-gateway.png)
+
+## How to write queries Jev understands
+
+Prompt Jev like a chatbot and it will fail with confidence. It does not converse, it evaluates. Vague question in, confident type-safe wrong answer out. Three rules fix most of it.
+
+**One condition per query.** Do not cram compound logic into a single check.
+
+```ts
+// bad: three conditions in one binary check
+const bad = noul("Is this an urgent production bug that needs engineering?");
+
+// good: atomic signals, evaluated in parallel
+const good = {
+  is_bug: noul("Does `ticket` describe broken software functionality?"),
+  urgency: score("Assess user impact in `ticket`:", [
+    "No disruption; cosmetic or informational",
+    "Degraded performance with an existing workaround",
+    "Complete outage; core transactions blocked",
+  ]),
+  owner: choice("Select the owning team for `ticket`:", {
+    core_eng: "API, database, or backend systems",
+    billing: "Invoices, payment gateways, charges",
+    other: "Unrelated queries",
+  }),
+};
+```
+
+Split signals give you clean confidence numbers instead of a 0.5 coin flip.
+
+**Concrete states, never adjectives.** What a customer calls "critical" is rarely what your on-call engineer calls critical.
+
+```ts
+// bad: subjective labels
+const badScore = score("Rate severity:", ["Low", "Medium", "High"]);
+
+// good: grounded in system reality
+const goodScore = score("Determine incident blast radius:", [
+  "Isolated to single user; edge clients only",
+  "Feature unavailable, but manual fallback succeeds",
+  "Data corruption or payments down globally",
+]);
+```
+
+Concrete criteria move confidence from a shaky 0.6 to a reliable 0.9.
+
+**Always provide an exit path.** Jev must pick an option, so without an escape hatch it is forced to misclassify.
+
+```ts
+// bad: closed enum, no fallback
+const badRoute = choice("Route database log:", {
+  postgres: "PostgreSQL engine events",
+  redis: "Redis cache events",
+});
+
+// good: explicit exit hatch
+const goodRoute = choice("Route database log:", {
+  postgres: "PostgreSQL engine events",
+  redis: "Redis cache events",
+  other: "Any other service or unrecognized pattern",
+});
+```
+
+Two more habits that matter. First, the question ID is only for your code. The model never sees it, so put the full context and decision rules in the instructions, not the name.
+
+Second, unlearn chaining. Your LLM muscle memory says ask one timid question at a time because calls are slow and expensive. Jev evaluates every question against the same state in one parallel pass, so ask everything upfront, even the conditional ones, and let your code discard what it does not need:
+
+```ts
+const TRIAGE_SPEC = {
+  category: choice("What kind of ticket is `ticket`?", {
+    bug_report: "Something broken or unexpected",
+    billing: "Invoices, duplicate charges, subscriptions",
+    feature_request: "Requests for nonexistent functionality",
+    other: null,
+  }),
+  bug_severity: score("If `ticket` is a bug, how critical is it?", [
+    "Cosmetic; zero operational impact",
+    "Degraded feature with an existing workaround",
+    "Complete blocker with zero workaround",
+  ]),
+  has_repro_steps: noul("Does `ticket` include steps to reproduce?"),
+  refund_requested: noul("Does `ticket` ask for money back?"),
+};
+
+const { answers } = await client.systemOne({ state: { ticket }, questions: TRIAGE_SPEC });
+
+if (answers.category.confidence < 0.6) return { route: "human_triage" };
+if (answers.category.choice === "bug_report") {
+  return answers.bug_severity.score > 1.5 && answers.has_repro_steps.noul > 0.6
+    ? { route: "engineering_hotfix", priority: "P0" }
+    : { route: "engineering_backlog" };
+}
+```
+
+You pay for the state tokens once. Every extra question is a tiny slice of compute.
+
+![Parallel vs sequential](/appendix-h/29-jev/05-parallel-vs-sequential.png)
+
+And when you need a blended score, do not ask the model to do weighted math in prose. Ask atomic questions, then combine them in your own code where the weights are visible and versionable:
+
+```ts
+const PRIORITY_QUESTIONS = {
+  severity: score("How severe is the issue in `ticket`?", [
+    "Cosmetic; no impact on functionality",
+    "Broken or degraded feature, but a workaround exists",
+    "Blocking issue; no workaround exists",
+  ]),
+  frustration: score("How frustrated is the author of `ticket`?", [
+    "Calm, just stating facts",
+    "Frustrated but civil",
+    "Very angry or threatening to leave",
+  ]),
+};
+
+function normalized(answers: any, id: string) {
+  const top = PRIORITY_QUESTIONS[id].criteria.length - 1;
+  return answers[id].score / top;
+}
+
+export async function priority(ticket: string) {
+  const { answers } = await client.systemOne({ state: { ticket }, questions: PRIORITY_QUESTIONS });
+  return 0.7 * normalized(answers, "severity") + 0.3 * normalized(answers, "frustration");
+}
+```
+
+When the ranking disagrees with the team, you adjust a coefficient and rerun. You never touch prompt phrasing.
+
+## Where Jev breaks
+
+TypeSafe is unusually blunt here. Jev is an ultra-fast semantic pattern matcher, not a general model. Push it outside that lane and it fails fast.
+
+- ***It cannot do math.*** Ask it to count broken items in a list and it will confidently hallucinate an integer. Flip the architecture. Let Jev evaluate the semantic condition per item, then count in code:
+
+```ts
+const logs = ["Database timed out", "User logged in", "Deadlock detected", "Cache hit"];
+
+const questions = Object.fromEntries(
+  logs.map((_, i) => [`log_${i}`, noul(`Does \`logs[${i}]\` describe a fatal system error?`)])
+);
+
+const { answers } = await client.systemOne({ state: { logs }, questions });
+const errorCount = logs.filter((_, i) => answers[`log_${i}`].noul > 0.6).length;
+```
+
+- ***Dates are dead on arrival.*** Timestamps are raw strings to Jev. It cannot tell if April 12 came before May 1 or whether "last Tuesday" falls in a trial window. Do the timestamp math in your runtime first, then feed Jev the result, like `account_age_days: 34`.
+- ***Scores are ordinal, not precise.*** A score of 1.4 on a 0 to 2 scale means it leans toward 1. Treat scores like letter grades. Good for sorting and cutoffs, useless for exact fractions.
+- ***It cannot generate text.*** Do not hack character-level Choice enums to make it spell things out. That builds a slow expensive monster that defeats the point. The pattern is simple. Code finds candidates with a regex or parser, Jev picks the right one from the list.
+- ***Schema-valid does not mean correct.*** A perfect enum key can still route your best customer to the spam folder with zero JSON errors. Treat your questions, rubrics, and confidence floors as business rules. Keep them in one file, version them, and run a regression suite of labeled inputs before shipping changes.
+
+![Where Jev breaks](/appendix-h/29-jev/07-limits.png)
+
+## What people are shipping with it
+
+**Agent harnesses.** LangChain's "Building a Harness with Jev" turned model routing from a paragraph in a system prompt into middleware:
+
+```python
+from langchain.agents import create_agent
+from langchain_typesafe.experimental.middleware import (
+    ModelChoice,
+    ModelRouterMiddleware,
+)
+
+router = ModelRouterMiddleware(
+    choices={
+        "fast": ModelChoice(
+            model="openai:luna",
+            criteria="Direct lookups, extraction, and localized changes.",
+        ),
+        "powerful": ModelChoice(
+            model="openai:sol",
+            criteria="Architecture and high-stakes decisions.",
+        ),
+    },
+    instructions="Choose the least costly model that can complete the task.",
+)
+
+agent = create_agent("openai:gpt-5.6-luna", middleware=[router])
+```
+
+They also ship an experimental auto-mode middleware that gates risky tool calls before execution, with tool output excluded from the classifier input so fetched content cannot authorize its own execution. SuperQode runs Jev as a tool-permission gate in their coding harness and reports 115 of 120 tickets never leaving Jev. pi-warden uses it as guardrails for the Pi coding agent, judging irreversible tool calls and catching stuck loops.
+
+**Jev as a judge.** LangSmith added Jev-as-a-judge evals and measured it against GPT-5.6 Luna, Terra, and Claude Sonnet 4.6 on fixed agent traces. It matched the human oracle on binary pass/fail with 92 to 913x lower score variance than LLM judges, at $0.34 total versus $28.17 for Claude. The zevals library reports zero malformed outputs across roughly 1,200 calls, with borderline cases surfacing as p around 0.5 instead of random pass/fail. DeepEval ships a JevEval metric where you define the decision points and Jev returns calibrated probabilities.
+
+**Coding agents.** winnow puts a System One model in front of Claude Code's context window, scoring every tool result for relevance before it gets in. jevgrep does semantic code search with no vector index. A ripgrep pass narrows to 30 to 50 candidates, then one batched Jev call returns a probability distribution over them.
+
+**Production triage.** classifier.dev runs zero-shot classification over HTTP on Jev and measured 400 news headlines classified in 650 milliseconds end to end, with multi-label F1 of 0.887 in 230ms against 0.799 in 1.5s for the LLM cascade it replaced. gg-friggin-ez is a drop-in npm toxicity screener with Jev as the default backend, handling leetspeak and romanized text across English and Indic languages at 50 to 500ms.
+
+**RAG precision.** Instead of a reranker trimming context, run Jev over every retrieved chunk and drop the irrelevant ones:
+
+```python
+from typesafe_sdk import Noul, TypeSafeClient
+
+client = TypeSafeClient()
+
+def filter_relevant_chunks(query: str, chunks: list, threshold: float = 0.5) -> list:
+    probe = Noul(
+        instructions="The chunk contains factual context necessary to resolve the user query."
+    )
+    valid = []
+    for doc in chunks:
+        assessment = client.system_one(
+            state={"target_query": query, "context_payload": doc.text},
+            questions={"is_useful": probe},
+        )
+        if assessment.answers["is_useful"].noul >= threshold:
+            valid.append(doc)
+    return valid
+```
+
+A per-chunk verdict is cheaper than another LLM call after retrieval.
+
+One security note before you ship a gate. An Octomind engineer showed that injecting a fake "user pre-approved" field into tool output moved Jev's block probability on `rm -rf ~/.ssh` from 0.76 to 0.48. Prompt injection steers it like any model reading untrusted text, so gates need deterministic checks underneath.
+
+## Quick recap
+
+- Most AI calls inside a backend are small decisions, not conversations. Sending them to a chat model costs seconds and real money for what is often a single bit of information.
+- Jev answers with one of three types. Noul gives a probability, Choice picks from your options, and Score places the input on a rubric you define.
+- Every question about the same state runs in one pass. You pay for the state once, so ask everything up front and let your code ignore what it doesn't need.
+- It works best as a gate or a router. Put it in front of the expensive stuff (LLMs, humans, risky tool calls) and let confident answers take the cheap path.
+- Write questions the way you would write a spec. One condition per question, concrete descriptions instead of adjectives, and always an "other" option.
+- Keep math, dates and text generation in your own code. Jev is a pattern matcher, and a well-formed answer can still be wrong.
+- If you already have labeled data for a fixed set of classes, a small classic classifier may beat it. Jev is most useful when you have no training data at all.
+- Treat its output like any model reading untrusted input. Put deterministic checks under any gate that can do real damage.
+
+Most numbers in this chapter come from TypeSafe or from early adopters, so test on your own data before you rely on them.
